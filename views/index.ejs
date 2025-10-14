@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title><%= title %></title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
+  <!-- Leaflet.draw CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin="anonymous" />
+
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- ハンバーガー -->
+  <button id="hamburger"
+          class="hamburger"
+          aria-label="Open controls"
+          aria-expanded="false"
+          aria-controls="sidepanel">
+    ☰
+  </button>
+
+  <!-- スライドオーバー（右） -->
+  <aside id="sidepanel" class="sidepanel" aria-hidden="true">
+    <header class="panel-header">
+      <h2>Controls</h2>
+      <button id="panelClose" class="icon-btn" aria-label="Close controls">✕</button>
+    </header>
+
+    <div class="panel-body">
+      <section class="panel-section">
+        <p class="muted">
+          地図上で <strong>矩形をドラッグ</strong> して BBOX を指定してください。<br>
+          クリックした三角形と、<em>共有辺を持つ別Hexの三角形</em>が同時にハイライトされます。
+        </p>
+      </section>
+
+      <section class="panel-section">
+        <label class="field">
+          <span>cellSize</span>
+          <input id="cellSize" type="number" step="0.1" min="0.05" value="<%= defaultCellSize %>" />
+        </label>
+
+        <label class="field">
+          <span>units</span>
+          <select id="units">
+            <option value="kilometers" <%= defaultUnits==='kilometers'?'selected':'' %>>kilometers</option>
+            <option value="meters" <%= defaultUnits==='meters'?'selected':'' %>>meters</option>
+            <option value="miles" <%= defaultUnits==='miles'?'selected':'' %>>miles</option>
+          </select>
+        </label>
+
+        <label class="check">
+          <input id="toggleTriangles" type="checkbox" checked />
+          <span>Show triangles</span>
+        </label>
+
+        <label class="check">
+          <input id="toggleHexLabels" type="checkbox" />
+          <span>Show Hex IDs</span>
+        </label>
+
+        <div class="panel-actions">
+          <button id="clear" class="btn">Clear</button>
+        </div>
+
+        <div class="bbox-row">
+          <span id="bboxLabel" class="bbox-label"></span>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <details>
+          <summary>ヘルプ</summary>
+          <ul class="muted">
+            <li>左上の四角いツールで矩形を描画します。</li>
+            <li>矩形を編集すると自動で再生成します。</li>
+            <li>三角形をクリックすると、隣接する他Hexの三角形を同時ハイライト。</li>
+          </ul>
+        </details>
+      </section>
+    </div>
+  </aside>
+
+  <!-- パネルの背面オーバーレイ -->
+  <div id="panelOverlay" class="panel-overlay" hidden></div>
+
+  <!-- 地図 -->
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+  <!-- Leaflet.draw JS -->
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin="anonymous"></script>
+
+  <script>
+    const lat = <%= lat %>;
+    const lon = <%= lon %>;
+
+    // 地図
+    const map = L.map('map', { zoomControl: true }).setView([lat, lon], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Drawn items
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    // Draw control（矩形のみ）
+    const drawControl = new L.Control.Draw({
+      position: 'topleft',
+      draw: {
+        polygon: false, polyline: false, marker: false,
+        circle: false, circlemarker: false,
+        rectangle: { shapeOptions: { weight: 1, fillOpacity: 0.05 } }
+      },
+      edit: { featureGroup: drawnItems, edit: true, remove: true }
+    });
+    map.addControl(drawControl);
+
+    // レイヤ参照
+    let hexLayer = null;
+    let triLayer = null;
+    let hexLayerIndex = {};             // hexId -> layer
+    let triLayerIndex = {};             // triangleId -> layer
+    let hexLabelLayer = L.layerGroup(); // Hex IDラベル群
+
+    // Util: Bounds → "minLon,minLat,maxLon,maxLat"
+    function boundsToBbox(bounds) {
+      return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(',');
+    }
+
+    // ハイライト制御
+    function clearHexHighlight() {
+      Object.values(hexLayerIndex).forEach(layer => {
+        layer.setStyle({ weight: 1, opacity: 1, fillOpacity: 0.15 });
+      });
+    }
+    function highlightHexById(hexId) {
+      const layer = hexLayerIndex[hexId];
+      if (layer) {
+        layer.setStyle({ weight: 3, opacity: 1, fillOpacity: 0.20 });
+        if (layer.bringToFront) layer.bringToFront();
+      }
+    }
+
+    function clearTriHighlight() {
+      Object.values(triLayerIndex).forEach(layer => {
+        layer.setStyle({ weight: 1, opacity: 0.9, fillOpacity: 0.10 });
+      });
+    }
+    function highlightTriangle(triId, style = { weight: 2, opacity: 1, fillOpacity: 0.20 }) {
+      const layer = triLayerIndex[triId];
+      if (layer) {
+        layer.setStyle(style);
+        if (layer.bringToFront) layer.bringToFront();
+      }
+    }
+
+    // Hex IDラベルを作成
+    function renderHexLabels(hexFC) {
+      hexLabelLayer.clearLayers();
+      hexFC.features.forEach(f => {
+        const id = f.properties?.hexId;
+        if (!id) return;
+        const coords = f.geometry.coordinates[0];
+        let sumLat = 0, sumLon = 0, n = 0;
+        coords.slice(0, -1).forEach(([lon, lat]) => { sumLat += lat; sumLon += lon; n++; });
+        const lat = sumLat / n, lon = sumLon / n;
+
+        const icon = L.divIcon({
+          html: `<div style="font-size:12px;font-weight:600;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:4px;border:1px solid #999;">${id}</div>`,
+          className: '', iconSize: [0,0]
+        });
+        L.marker([lat, lon], { icon }).addTo(hexLabelLayer);
+      });
+    }
+
+    // Hex / Triangles を描画
+    function renderLayers(hexFC, trianglesFC) {
+      if (hexLayer) map.removeLayer(hexLayer);
+      if (triLayer) map.removeLayer(triLayer);
+      hexLabelLayer.removeFrom(map);
+      hexLayerIndex = {};
+      triLayerIndex = {};
+
+      // 六角形
+      hexLayer = L.geoJSON(hexFC, {
+        style: { weight: 1, opacity: 1, fillOpacity: 0.15 },
+        onEachFeature: (feature, layer) => {
+          const hid = feature.properties?.hexId;
+          if (hid != null) hexLayerIndex[hid] = layer;
+          const triIds = feature.properties?.triIds?.length ? feature.properties.triIds.join(', ') : 'N/A';
+          layer.bindPopup(`Hex ID: ${hid}<br>Triangles: ${triIds}`);
+        }
+      }).addTo(map);
+
+      // 三角形
+      triLayer = L.geoJSON(trianglesFC, {
+        style: { weight: 1, opacity: 0.9, fillOpacity: 0.10 },
+        onEachFeature: (feature, layer) => {
+          const pid = feature.properties?.parentHexId ?? 'N/A';
+          const tid = feature.properties?.triangleId ?? 'N/A';
+          const cross = feature.properties?.crossNeighbors ?? [];
+          const neighborHexIds = feature.properties?.neighborHexIds ?? [];
+
+          triLayerIndex[tid] = layer;
+
+          layer.bindPopup(
+            `Triangle: ${tid}<br>` +
+            `Parent Hex: ${pid}<br>` +
+            `Cross neighbors: ${cross.length ? cross.join(', ') : 'None'}<br>` +
+            `Neighbor Hexes: ${neighborHexIds.length ? neighborHexIds.join(', ') : 'None'}`
+          );
+
+          layer.on('click', () => {
+            // クリック時：当該三角形＋交差隣接三角形をハイライト
+            clearHexHighlight();
+            clearTriHighlight();
+            highlightHexById(pid);                // 親Hexも強調
+            highlightTriangle(tid, { weight: 3, opacity: 1, fillOpacity: 0.30 }); // クリック対象
+
+            // 隣接（別Hex）の三角形を同時に強調
+            cross.forEach(cid => {
+              highlightTriangle(cid, { weight: 2, opacity: 1, fillOpacity: 0.25 });
+              // その親Hexも薄く強調
+              const neighborLayer = triLayerIndex[cid];
+              if (neighborLayer) {
+                const pHex = neighborLayer.feature?.properties?.parentHexId;
+                if (pHex != null) highlightHexById(pHex);
+              }
+            });
+          });
+
+          // マウスアウトで三角形のハイライトだけ戻す（Hexは維持）
+          layer.on('mouseout', () => {
+            clearTriHighlight();
+          });
+        }
+      });
+
+      // 三角形トグル
+      if (document.getElementById('toggleTriangles').checked) {
+        triLayer.addTo(map);
+      }
+
+      // Hex ID ラベル
+      renderHexLabels(hexFC);
+      if (document.getElementById('toggleHexLabels').checked) {
+        hexLabelLayer.addTo(map);
+      }
+
+      // ビュー調整
+      const layers = [hexLayer];
+      if (document.getElementById('toggleTriangles').checked) layers.push(triLayer);
+      const bounds = L.featureGroup(layers).getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+    }
+
+    // API呼び出し
+    async function loadHexgridByBounds(bounds) {
+      const bbox = boundsToBbox(bounds);
+      document.getElementById('bboxLabel').textContent = `BBOX: ${bbox}`;
+
+      const cellSize = document.getElementById('cellSize').value.trim();
+      const units = document.getElementById('units').value.trim();
+
+      const url = `/api/hexgrid?bbox=${encodeURIComponent(bbox)}&cellSize=${encodeURIComponent(cellSize)}&units=${encodeURIComponent(units)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'API error');
+      }
+      const { hex, triangles } = await res.json();
+      renderLayers(hex, triangles);
+    }
+
+    // Draw イベント
+    map.on(L.Draw.Event.CREATED, async (e) => {
+      drawnItems.clearLayers();
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+      try {
+        await loadHexgridByBounds(layer.getBounds());
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    map.on(L.Draw.Event.EDITSTOP, async () => {
+      const layers = drawnItems.getLayers();
+      if (layers.length === 1) {
+        try {
+          await loadHexgridByBounds(layers[0].getBounds());
+        } catch (err) {
+          alert(err.message);
+        }
+      }
+    });
+
+    map.on(L.Draw.Event.DELETED, () => {
+      drawnItems.clearLayers();
+      if (hexLayer) { map.removeLayer(hexLayer); hexLayer = null; }
+      if (triLayer) { map.removeLayer(triLayer); triLayer = null; }
+      hexLabelLayer.removeFrom(map);
+      document.getElementById('bboxLabel').textContent = '';
+    });
+
+    // ======= ハンバーガー / パネル制御 =======
+    const hamburger = document.getElementById('hamburger');
+    const sidepanel = document.getElementById('sidepanel');
+    const panelClose = document.getElementById('panelClose');
+    const panelOverlay = document.getElementById('panelOverlay');
+
+    function openPanel() {
+      sidepanel.classList.add('open');
+      hamburger.setAttribute('aria-expanded', 'true');
+      sidepanel.setAttribute('aria-hidden', 'false');
+      panelOverlay.hidden = false;
+      // 画面幅が狭い時に、Leafletのツールと干渉しないようパネルを最前面に
+    }
+    function closePanel() {
+      sidepanel.classList.remove('open');
+      hamburger.setAttribute('aria-expanded', 'false');
+      sidepanel.setAttribute('aria-hidden', 'true');
+      panelOverlay.hidden = true;
+    }
+
+    hamburger.addEventListener('click', () => {
+      if (sidepanel.classList.contains('open')) closePanel();
+      else openPanel();
+    });
+    panelClose.addEventListener('click', closePanel);
+    panelOverlay.addEventListener('click', closePanel);
+    // ESCで閉じる
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePanel();
+    });
+
+    // UIトグル
+    document.getElementById('clear').addEventListener('click', () => {
+      drawnItems.clearLayers();
+      if (hexLayer) { map.removeLayer(hexLayer); hexLayer = null; }
+      if (triLayer) { map.removeLayer(triLayer); triLayer = null; }
+      hexLabelLayer.removeFrom(map);
+      document.getElementById('bboxLabel').textContent = '';
+    });
+
+    document.getElementById('toggleTriangles').addEventListener('change', () => {
+      if (!triLayer) return;
+      if (document.getElementById('toggleTriangles').checked) triLayer.addTo(map);
+      else map.removeLayer(triLayer);
+    });
+
+    document.getElementById('toggleHexLabels').addEventListener('change', () => {
+      if (document.getElementById('toggleHexLabels').checked) {
+        hexLabelLayer.addTo(map);
+      } else {
+        hexLabelLayer.removeFrom(map);
+      }
+    });
+
+    // 初期は描画待ち（必要なら初期BBOXを有効化）
+    // loadHexgridByBounds(L.latLngBounds([35.53, 139.55], [35.80, 139.92]));
+  </script>
+</body>
+</html>
