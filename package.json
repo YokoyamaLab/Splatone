@@ -1,0 +1,26 @@
+{
+  "name": "splatone",
+  "version": "0.0.1",
+  "description": "Multi-layer Composite Heatmap",
+  "homepage": "https://github.com/YokoyamaLab/Splatone#readme",
+  "bugs": {
+    "url": "https://github.com/YokoyamaLab/Splatone/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YokoyamaLab/Splatone.git"
+  },
+  "license": "MIT",
+  "author": "Shohei Yokoyama (Tokyo Metropolitan University)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@turf/turf": "^7.2.0",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "open": "^10.2.0"
+  }
+}
