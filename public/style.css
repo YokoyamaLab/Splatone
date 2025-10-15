@@ -1,4 +1,8 @@
 /* ====== Map base ====== */
+html, body {
+  overflow-x: hidden;
+}
+
 html, body, #map {
   height: 100%;
   width: 100%;
@@ -88,6 +92,7 @@ html, body, #map {
   color: #333;
 }
 .field input[type="number"],
+.field input[type="text"],
 .field select {
   flex: 1;
   border: 1px solid #ccc;
@@ -149,3 +154,15 @@ html, body, #map {
 .leaflet-draw-toolbar a {
   border-radius: 8px !important;
 }
+
+.map-bottom-left-control {
+  width: 160;      /* 好きな幅 */
+  height: 44px;     /* 好きな高さ */
+  border-radius: 10px;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid rgba(0,0,0,.12);
+  box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  overflow: auto;     /* 中身が溢れたらスクロール */
+  backdrop-filter: blur(6px); /* 対応ブラウザで半透明の質感UP */
+}
+.map-bottom-left-control .panel-contents { padding: 10px; }
