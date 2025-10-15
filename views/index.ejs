@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8" />
   <title><%= title %></title>
@@ -11,13 +12,10 @@
 
   <link rel="stylesheet" href="/style.css" />
 </head>
+
 <body>
   <!-- ハンバーガー -->
-  <button id="hamburger"
-          class="hamburger"
-          aria-label="Open controls"
-          aria-expanded="false"
-          aria-controls="sidepanel">
+  <button id="hamburger" class="hamburger" aria-label="Open controls" aria-expanded="false" aria-controls="sidepanel">
     ☰
   </button>
 
@@ -37,6 +35,10 @@
       </section>
 
       <section class="panel-section">
+        <label class="field">
+          <span>Keywords</span>
+          <input id="keywords" type="text" value="<%= defaultKeywords %>" />
+        </label>
         <label class="field">
           <span>cellSize</span>
           <input id="cellSize" type="number" step="0.1" min="0.05" value="<%= defaultCellSize %>" />
@@ -93,13 +95,32 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
   <!-- Leaflet.draw JS -->
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin="anonymous"></script>
-
+  <!-- Socket.IO JS -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
     const lat = <%= lat %>;
     const lon = <%= lon %>;
+    const socket = io({
+      path: "/socket",
+      reconnection: false
+    });
+    socket.on('connect', () => {
+      //console.log('Connected to server');
+    });
+
+    socket.on('disconnect', () => {
+      //console.log('Disconnected from server');
+    });
+    let sessionId = null;
+    socket.on("welcome", (res) => {
+      //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
+      sessionId = res.sessionId;
+    });
 
     // 地図
-    const map = L.map('map', { zoomControl: true }).setView([lat, lon], 12);
+    const map = L.map('map', {
+      zoomControl: true
+    }).setView([lat, lon], 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -113,19 +134,32 @@
     const drawControl = new L.Control.Draw({
       position: 'topleft',
       draw: {
-        polygon: false, polyline: false, marker: false,
-        circle: false, circlemarker: false,
-        rectangle: { shapeOptions: { weight: 1, fillOpacity: 0.05 } }
+        polygon: false,
+        polyline: false,
+        marker: false,
+        circle: false,
+        circlemarker: false,
+        rectangle: {
+          shapeOptions: {
+            weight: 1,
+            fillOpacity: 0.05
+          }
+        }
       },
-      edit: { featureGroup: drawnItems, edit: true, remove: true }
+      edit: {
+        featureGroup: drawnItems,
+        edit: true,
+        remove: true
+      }
     });
     map.addControl(drawControl);
 
     // レイヤ参照
     let hexLayer = null;
     let triLayer = null;
-    let hexLayerIndex = {};             // hexId -> layer
-    let triLayerIndex = {};             // triangleId -> layer
+    let myStartBtn = null;
+    let hexLayerIndex = {}; // hexId -> layer
+    let triLayerIndex = {}; // triangleId -> layer
     let hexLabelLayer = L.layerGroup(); // Hex IDラベル群
 
     // Util: Bounds → "minLon,minLat,maxLon,maxLat"
@@ -136,23 +170,41 @@
     // ハイライト制御
     function clearHexHighlight() {
       Object.values(hexLayerIndex).forEach(layer => {
-        layer.setStyle({ weight: 1, opacity: 1, fillOpacity: 0.15 });
+        layer.setStyle({
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.15
+        });
       });
     }
+
     function highlightHexById(hexId) {
       const layer = hexLayerIndex[hexId];
       if (layer) {
-        layer.setStyle({ weight: 3, opacity: 1, fillOpacity: 0.20 });
+        layer.setStyle({
+          weight: 3,
+          opacity: 1,
+          fillOpacity: 0.20
+        });
         if (layer.bringToFront) layer.bringToFront();
       }
     }
 
     function clearTriHighlight() {
       Object.values(triLayerIndex).forEach(layer => {
-        layer.setStyle({ weight: 1, opacity: 0.9, fillOpacity: 0.10 });
+        layer.setStyle({
+          weight: 1,
+          opacity: 0.9,
+          fillOpacity: 0.10
+        });
       });
     }
-    function highlightTriangle(triId, style = { weight: 2, opacity: 1, fillOpacity: 0.20 }) {
+
+    function highlightTriangle(triId, style = {
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.20
+    }) {
       const layer = triLayerIndex[triId];
       if (layer) {
         layer.setStyle(style);
@@ -167,15 +219,25 @@
         const id = f.properties?.hexId;
         if (!id) return;
         const coords = f.geometry.coordinates[0];
-        let sumLat = 0, sumLon = 0, n = 0;
-        coords.slice(0, -1).forEach(([lon, lat]) => { sumLat += lat; sumLon += lon; n++; });
-        const lat = sumLat / n, lon = sumLon / n;
+        let sumLat = 0,
+          sumLon = 0,
+          n = 0;
+        coords.slice(0, -1).forEach(([lon, lat]) => {
+          sumLat += lat;
+          sumLon += lon;
+          n++;
+        });
+        const lat = sumLat / n,
+          lon = sumLon / n;
 
         const icon = L.divIcon({
           html: `<div style="font-size:12px;font-weight:600;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:4px;border:1px solid #999;">${id}</div>`,
-          className: '', iconSize: [0,0]
+          className: '',
+          iconSize: [0, 0]
         });
-        L.marker([lat, lon], { icon }).addTo(hexLabelLayer);
+        L.marker([lat, lon], {
+          icon
+        }).addTo(hexLabelLayer);
       });
     }
 
@@ -183,13 +245,18 @@
     function renderLayers(hexFC, trianglesFC) {
       if (hexLayer) map.removeLayer(hexLayer);
       if (triLayer) map.removeLayer(triLayer);
+      if (myStartBtn) map.removeControl(myStartBtn);
       hexLabelLayer.removeFrom(map);
       hexLayerIndex = {};
       triLayerIndex = {};
 
       // 六角形
       hexLayer = L.geoJSON(hexFC, {
-        style: { weight: 1, opacity: 1, fillOpacity: 0.15 },
+        style: {
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.15
+        },
         onEachFeature: (feature, layer) => {
           const hid = feature.properties?.hexId;
           if (hid != null) hexLayerIndex[hid] = layer;
@@ -198,9 +265,44 @@
         }
       }).addTo(map);
 
+      const BottomLeftPanel = L.Control.extend({
+        options: {
+          position: 'bottomleft'
+        },
+        onAdd(map) {
+          const div = L.DomUtil.create('div', 'map-bottom-left-control');
+          div.innerHTML = `
+      <div class="panel-contents">
+        <button class="btn"id="doSomething">Start Crawling!</button>
+      </div>`;
+          // コントロール内の操作が地図ドラッグに奪われないようにする
+          L.DomEvent.disableClickPropagation(div);
+          L.DomEvent.disableScrollPropagation(div);
+
+          const btn = div.querySelector('#doSomething');
+          btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation(); // 念のため地図へのバブリングも止める
+            // ---- 任意の処理 ----
+            socket.emit("crawling", {
+              sessionId: sessionId,
+            });
+          }, {
+            once: true
+          });
+
+          return div;
+        }
+      });
+      myStartBtn = new BottomLeftPanel().addTo(map);
+
       // 三角形
       triLayer = L.geoJSON(trianglesFC, {
-        style: { weight: 1, opacity: 0.9, fillOpacity: 0.10 },
+        style: {
+          weight: 1,
+          opacity: 0.9,
+          fillOpacity: 0.10
+        },
         onEachFeature: (feature, layer) => {
           const pid = feature.properties?.parentHexId ?? 'N/A';
           const tid = feature.properties?.triangleId ?? 'N/A';
@@ -220,12 +322,20 @@
             // クリック時：当該三角形＋交差隣接三角形をハイライト
             clearHexHighlight();
             clearTriHighlight();
-            highlightHexById(pid);                // 親Hexも強調
-            highlightTriangle(tid, { weight: 3, opacity: 1, fillOpacity: 0.30 }); // クリック対象
+            highlightHexById(pid); // 親Hexも強調
+            highlightTriangle(tid, {
+              weight: 3,
+              opacity: 1,
+              fillOpacity: 0.30
+            }); // クリック対象
 
             // 隣接（別Hex）の三角形を同時に強調
             cross.forEach(cid => {
-              highlightTriangle(cid, { weight: 2, opacity: 1, fillOpacity: 0.25 });
+              highlightTriangle(cid, {
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.25
+              });
               // その親Hexも薄く強調
               const neighborLayer = triLayerIndex[cid];
               if (neighborLayer) {
@@ -257,7 +367,9 @@
       const layers = [hexLayer];
       if (document.getElementById('toggleTriangles').checked) layers.push(triLayer);
       const bounds = L.featureGroup(layers).getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+      if (bounds.isValid()) map.fitBounds(bounds, {
+        padding: [20, 20]
+      });
     }
 
     // API呼び出し
@@ -267,7 +379,8 @@
 
       const cellSize = document.getElementById('cellSize').value.trim();
       const units = document.getElementById('units').value.trim();
-
+      const keywords = document.getElementById('keywords').value.trim();
+      /*
       const url = `/api/hexgrid?bbox=${encodeURIComponent(bbox)}&cellSize=${encodeURIComponent(cellSize)}&units=${encodeURIComponent(units)}`;
       const res = await fetch(url);
       if (!res.ok) {
@@ -275,7 +388,24 @@
         throw new Error(err.error || 'API error');
       }
       const { hex, triangles } = await res.json();
-      renderLayers(hex, triangles);
+      */
+
+      socket.once("hexgrid", (res) => {
+        if (res.sessionId) sessionId = res.sessionId;
+        //console.log(`hexgrid received (${res.hex.features.length} hexes, ${res.triangles.features.length} triangles)`);
+        const hex = res.hex;
+        const triangles = res.triangles;
+        renderLayers(hex, triangles);
+      });
+      socket.emit("target", {
+        sessionId: sessionId,
+        query: {
+          bbox: bbox,
+          cellSize: cellSize,
+          units: units,
+          tags: keywords
+        }
+      });
     }
 
     // Draw イベント
@@ -303,8 +433,18 @@
 
     map.on(L.Draw.Event.DELETED, () => {
       drawnItems.clearLayers();
-      if (hexLayer) { map.removeLayer(hexLayer); hexLayer = null; }
-      if (triLayer) { map.removeLayer(triLayer); triLayer = null; }
+      if (hexLayer) {
+        map.removeLayer(hexLayer);
+        hexLayer = null;
+      }
+      if (triLayer) {
+        map.removeLayer(triLayer);
+        triLayer = null;
+      }
+      if(myStartBtn){
+        map.removeControl(myStartBtn);
+        myStartBtn = null;
+      }
       hexLabelLayer.removeFrom(map);
       document.getElementById('bboxLabel').textContent = '';
     });
@@ -322,6 +462,7 @@
       panelOverlay.hidden = false;
       // 画面幅が狭い時に、Leafletのツールと干渉しないようパネルを最前面に
     }
+
     function closePanel() {
       sidepanel.classList.remove('open');
       hamburger.setAttribute('aria-expanded', 'false');
@@ -343,8 +484,18 @@
     // UIトグル
     document.getElementById('clear').addEventListener('click', () => {
       drawnItems.clearLayers();
-      if (hexLayer) { map.removeLayer(hexLayer); hexLayer = null; }
-      if (triLayer) { map.removeLayer(triLayer); triLayer = null; }
+      if (hexLayer) {
+        map.removeLayer(hexLayer);
+        hexLayer = null;
+      }
+      if (triLayer) {
+        map.removeLayer(triLayer);
+        triLayer = null;
+      }
+      if(myStartBtn){
+        map.removeControl(myStartBtn);
+        myStartBtn = null;
+      }
       hexLabelLayer.removeFrom(map);
       document.getElementById('bboxLabel').textContent = '';
     });
@@ -367,4 +518,5 @@
     // loadHexgridByBounds(L.latLngBounds([35.53, 139.55], [35.80, 139.92]));
   </script>
 </body>
+
 </html>
