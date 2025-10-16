@@ -16,7 +16,7 @@ export default class FlickrPlugin extends PluginBase {
     }
 
     // 任意の公開メソッド
-    async crawl({ hexGrid, triangles, tags, max_upload_date, sessionId }) {
+    async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, sessionId }) {
         if (!this.started) {
             this.start();
         }
@@ -31,22 +31,28 @@ export default class FlickrPlugin extends PluginBase {
             return featureCollection(selected);
         }
         const hexQuery = {};
-        hexGrid.features.map(item => {
+        const ks = Object.keys(hexGrid.features);
+        await Promise.all(ks.map(async k => {
+            const item = hexGrid.features[k];
             hexQuery[item.properties.hexId] = {};
-            tags.split('|').map(tag_set => {
-                hexQuery[item.properties.hexId][tag_set] = { photos: [], final: false };
+            const cks = Object.keys(categories);
+            await Promise.all(cks.map(ck => {
+                const tags = categories[ck];
+                //console.log("tag=",ck,"/",tags);
+                hexQuery[item.properties.hexId][ck] = { photos: [], tags, final: false };
                 this.api.emit('splatone:start', {
                     plugin: 'flickr',
                     API_KEY: this.options.API_KEY,
                     hex: item,
                     triangles: getTrianglesInHex(item, triangles),
                     bbox: bbox(item.geometry),
-                    tags: tag_set,
-                    max_upload_date, 
+                    category: ck,
+                    tags,
+                    max_upload_date,
                     sessionId
                 });
-            });
-        });
+            }));
+        }));
         return `Flickr, ${this.options.API_KEY}, ${hexGrid.features.length} bboxes processed.`;
     }
 }

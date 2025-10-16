@@ -1,35 +1,107 @@
 // Node core
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { constants, existsSync } from 'node:fs';
+import { access, readFile } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve, dirname } from 'node:path';
 
 // Third-party
+import chroma from "chroma-js";
 import express from 'express';
+//import Palette from 'iwanthue/palette.js';
 import open from 'open';
 import Piscina from 'piscina';
 import uniqid from 'uniqid';
 import { Server as IOServer } from 'socket.io';
-import { centroid, featureCollection, hexGrid, polygon } from '@turf/turf';
+import { buffer, union, dissolve, convex, concave, point, centroid, featureCollection, hexGrid, polygon } from '@turf/turf';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 
 // Local
 import { loadPlugins } from './pluginLoader.js';
+import renderer from './renderer.js';
+import paletteGenerator from './paletteGenerator.js';
+import { render } from 'ejs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 
-/* DEBUG用　Flickr API Key読み込み */
-async function loadFlickrKey() {
-  const raw = await readFile(".API_KEY.Flickr", "utf8");
-  const FLICKR_API_KEY = raw.trim(); // 両端の空白・改行を除去
-  return FLICKR_API_KEY;
-}
-const FLICKR_API_KEY = await loadFlickrKey();
+const argv = yargs(hideBin(process.argv))
+  .strict()                        // 未定義オプションはエラー
+  .usage('使い方: $0 [options]')
+  .option('plugins', {
+    alias: 'p',
+    demandOption: true,
+    default: '{}',
+    describe: 'プラグインに渡すオプション(JSON文字列)',
+    type: 'string'
+  })
+  .option('vis-splatone', {
+    alias: 'vS',
+    type: 'boolean',
+    default: true,
+    description: 'Show a Layer with Splatone Heatmap'
+  })
+  .option('vis-naive', {
+    alias: 'vN',
+    type: 'boolean',
+    default: true,
+    description: 'Show a Layer with All Point Markers'
+  })
+  .option('keywords', {
+    alias: 'k',
+    type: 'string',
+    default: '商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground',
+    description: '検索キーワード(フォーマット確認する事)'
+  })
+  .version()
+  .coerce({
+    plugins: ((name) => (v) => {
+      try { return JSON.parse(v); }
+      catch (e) { throw new Error(`--${name}: JSON エラー: ${e.message}`); }
+    })('plugins')
+  })
+  .parseSync();
+const visualizer_all = ["splatone", "naive"];
+const visualizers = visualizer_all.filter(v => argv[`vis-${v}`]);
+console.log("Visualizer layers:", visualizers.join(", ") || "(none)");
+const plugin_options = argv.plugins;
+console.log(plugin_options);
 
+/* API Key読み込み */
+async function loadAPIKey(plugin = 'flickr') {
+  const filePath = ".API_KEY." + plugin;
+  const file = resolve(filePath);
+  // 存在＆読取権限チェック
+  try {
+    await access(file, constants.F_OK | constants.R_OK);
+  } catch (err) {
+    const code = /** @type {{ code?: string }} */(err).code || 'UNKNOWN';
+    throw new Error(`APIキーのファイルにアクセスできません: ${file} (code=${code})`);
+  }
+  // 読み込み & トリム
+  const raw = await readFile(file, 'utf8');
+  const key = raw.trim();
+  if (!key) {
+    throw new Error(`APIキーのファイルが空です: ${file}`);
+  }
+  // ※任意: Flickr APIキーの緩い形式チェック（英数32+文字）
+  // 公式に厳格仕様が明示されていないため、緩めのガードに留めます。
+  if (!/^[A-Za-z0-9]{32,}$/.test(key)) {
+    // 形式が怪しい場合は警告だけにするなら console.warn に変更
+    throw new Error(`APIキーの形式が不正の可能性があります（英数字32文字以上を想定）: ${file}`);
+  }
+  return key;
+}
+try {
+  plugin_options.flickr.API_KEY = await loadAPIKey("flickr");
+} catch (e) {
+  console.error("Error loading API key:", e.message);
+  //Nothing to do
+}
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
@@ -109,7 +181,7 @@ app.get('/', (_req, res) => {
     lon: DEFAULT_CENTER.lon,
     defaultCellSize: 0.5,
     defaultUnits: 'kilometers',
-    defaultKeywords: 'food,drink,restaurant,cafe,bar|museum,art,exhibition,expo,sculpture,heritage|park,garden,flower,green,pond',
+    defaultKeywords: argv.keywords,
   });
 });
 
@@ -141,7 +213,8 @@ io.on("connection", (socket) => {
         hexGrid: targets[req.sessionId].hex,
         triangles: targets[req.sessionId].triangles,
         sessionId: req.sessionId,
-        tags: targets[req.sessionId].tags,
+        //tags: targets[req.sessionId].tags,
+        categories: targets[req.sessionId].categories,
         max_upload_date: toMySQLDatetime(),
       });
     }
@@ -154,7 +227,7 @@ io.on("connection", (socket) => {
   // クロール範囲指定
   socket.on("target", (req) => {
     try {
-      //console.log("target:", req);
+      console.log("target:", req);
       if (sessionId !== req.sessionId) {
         console.warn("invalid sessionId:", req.sessionId);
         return;
@@ -177,11 +250,50 @@ io.on("connection", (socket) => {
         return res.status(400).json({ error: 'cellSize must be a positive number' });
       }
 
+      //カテゴリ生成
+      const categorize = (tags) => {
+        let cats = {};
+        tags.split('|').forEach((tag_set, i) => {
+          const key_val = tag_set.split("=", 2);
+          const key = (key_val.length == 1) ? key_val[0].split(",")[0] : key_val[0];
+          const val = (key_val.length == 1) ? key_val[0] : key_val[1];
+          cats[key] = val;
+        });
+        return cats;
+      };
+      const categories = categorize(req.query.tags);
+
+      //パレット生成
+      const colors = paletteGenerator.generate(
+        Object.keys(categories).length, // Colors
+        function (color) { // This function filters valid colors
+          var hcl = color.hcl();
+          return hcl[0] >= 0 && hcl[0] <= 360
+            && hcl[1] >= 54.96 && hcl[1] <= 134
+            && hcl[2] >= 19.14 && hcl[2] <= 90.23;
+        },
+        true, // Using Force Vector instead of k-Means
+        50, // Steps (quality)
+        false, // Ultra precision
+        'Default' // Color distance type (colorblindness)
+      );
+      // Sort colors by differenciation first
+      const palette = paletteGenerator.diffSort(colors, 'Default');
+      const splatonePalette = Object.fromEntries(Object.entries(categories).map(([k, v]) => {
+        const color = palette.pop()
+        const colors = {
+          "color": color.hex(),
+          "darken": color.darken(2).hex(),
+          "brighten": color.brighten(2).hex()
+        }
+        return [k, colors];
+      }));
       // HexGrid 生成
       const hexFC = hexGrid(bboxArray, sizeNum, { units });
       hexFC.features.forEach((f, i) => {
         f.properties = { hexId: i + 1, triIds: [] };
       });
+
 
       // 三角形生成（扇形分割）＋ エッジ索引作成
       const triFeatures = [];
@@ -244,9 +356,10 @@ io.on("connection", (socket) => {
         }
       }
       const trianglesFC = featureCollection(triFeatures);
+
       //console.log(JSON.stringify(hexFC, null, 2));
       //res.json({ hex: hexFC, triangles: trianglesFC });
-      targets[sessionId] = { hex: hexFC, triangles: trianglesFC, tags: tags };
+      targets[sessionId] = { hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
       socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
     } catch (e) {
       console.error(e);
@@ -267,9 +380,7 @@ const api = {
 const pm = await loadPlugins({
   dir: './plugins',
   api,
-  optionsById: {
-    flickr: { API_KEY: FLICKR_API_KEY }, // プラグイン固有オプションがあれば
-  },
+  optionsById: plugin_options,
 });
 //console.log('loaded:', pm.list());
 
@@ -289,20 +400,23 @@ function resolveWorkerFilename(taskName) {
   return resolvedWorkerFilename[taskName];
 }
 
-const statsItems = (crawler) => {
+const statsItems = (crawler, target,) => {
   const stats = [];
+  let finish = Object.keys(target.categories).length * target.hex.features.length;
   for (const [hexId, tagsObj] of Object.entries(crawler)) {
-    for (const [tags, items] of Object.entries(tagsObj)) {
+    for (const [category, items] of Object.entries(tagsObj)) {
+      finish -= (items.final === true) ? 1 : 0;
       for (const item of items.items.features) {
         //console.log(item.properties)
         stats[hexId] ??= [];
         stats[hexId][item.properties.splatone_triId] ??= [];
-        stats[hexId][item.properties.splatone_triId][tags.split(',')[0]] ??= 0;
-        stats[hexId][item.properties.splatone_triId][tags.split(',')[0]] += 1;
+        stats[hexId][item.properties.splatone_triId][category] ??= 0;
+        stats[hexId][item.properties.splatone_triId][category] += 1;
       }
     }
   }
-  return stats;
+  console.log(finish, "of", Object.keys(target.categories).length * target.hex.features.length);
+  return { stats, finish: (finish == 0) };
 };
 
 export async function runTask(taskName, data) {
@@ -318,22 +432,37 @@ const piscina = new Piscina({
   // 注意：ここで filename は渡さない。run 時に切り替える
 });
 
-const off = await subscribe('splatone:start', async p => {
+await subscribe('splatone:start', async p => {
   //console.log('[splatone:start]', p);
   const rtn = await runTask(p.plugin, p);
   //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
   crawlers[p.sessionId][rtn.hexId] ??= {};
-  crawlers[p.sessionId][rtn.hexId][rtn.tags] ??= {items:featureCollection([])};
-  crawlers[p.sessionId][rtn.hexId][rtn.tags].final = rtn.final;
-  crawlers[p.sessionId][rtn.hexId][rtn.tags].items = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.tags].items, rtn.photos);
+  crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
+  crawlers[p.sessionId][rtn.hexId][rtn.category].final = rtn.final;
+  crawlers[p.sessionId][rtn.hexId][rtn.category].items = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, rtn.photos);
   //console.log(crawlers[p.sessionId]);
-  console.table(statsItems(crawlers[p.sessionId]))
+  const { stats, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
+
   if (!rtn.final) {
     // 次回クロール用に更新
     p.max_upload_date = rtn.next_max_upload_date;
     //console.log("next max_upload_date:", p.max_upload_date);
     api.emit('splatone:start', p);
+  } else if (finish) {
+    console.table(stats);
+    api.emit('splatone:finish', p);
   }
+});
+await subscribe('splatone:finish', async p => {
+  const result = crawlers[p.sessionId];
+  const target = targets[p.sessionId];
+  console.log('[splatone:finish]');
+  const geoJson = {};
+  for (const vis of visualizers) {
+    const layer = renderer[vis](result, target);
+    geoJson[vis] = layer;
+  }
+  io.to(p.sessionId).emit('result', { geoJson, palette: target["splatonePalette"] });
 });
 
 server.listen(port, async () => {

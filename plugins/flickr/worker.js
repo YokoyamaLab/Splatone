@@ -6,6 +6,7 @@ export default async function ({
     API_KEY = "",
     bbox = [0, 0, 0, 0],
     tags = "",
+    category = "",
     max_upload_date = null,
     hex = null,
     triangles = null,
@@ -20,11 +21,12 @@ export default async function ({
     const res = await flickr("flickr.photos.search", {
         ...baseParams,
         has_geo: 1,
-        extras: "date_upload,date_taken,owner_name,geo,url_m,tags",
+        extras: "date_upload,date_taken,owner_name,geo,url_s,tags",
         per_page: 250,
-        pages: 1,
+        page: 1,
         sort: "date-posted-desc"
     });
+    console.log("[(Crawl)",hex.properties.hexId,category,"]",(new Date(max_upload_date * 1000)).toLocaleString(),"-> photos:",res.photos.photo.length,"/",res.photos.total);
     const photos = featureCollection(res.photos.photo.filter(photo => {
         return booleanPointInPolygon(point([photo.longitude, photo.latitude]), hex);
     }).map(photo => {
@@ -49,5 +51,5 @@ export default async function ({
         ? (res.photos.photo[res.photos.photo.length - 1].dateupload) - (res.photos.photo[res.photos.photo.length - 1].dateupload == res.photos.photo[0].dateupload ? 1 : 0)
         : null;
 
-    return { photos, hexId: hex.properties.hexId, tags, next_max_upload_date, final: res.photos.page >= res.photos.pages };
+    return { photos, hexId: hex.properties.hexId, tags, category, next_max_upload_date, final: res.photos.photo.length == res.photos.total };
 }
