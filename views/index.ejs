@@ -95,8 +95,12 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
   <!-- Leaflet.draw JS -->
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin="anonymous"></script>
+  
   <!-- Socket.IO JS -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Visualize.js -->
+  <script src="visualizer.js"></script>
+  <!-- Main JS -->
   <script>
     const lat = <%= lat %>;
     const lon = <%= lon %>;
@@ -116,16 +120,56 @@
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
       sessionId = res.sessionId;
     });
+    function generateLegend(legends){
+      return legends.reduce(
+        (memo,legend)=>{return memo + `<li><span class="legend_circle" style="border-color:${legend.stroke};background:${legend.fill};"></span><span class="legend_category">${legend.category}</spam></li>`},
+        "");
+    }
+    const BottomLeftLegend = L.Control.extend({
+      options: {
+        position: 'bottomleft'
+      },
+      onAdd(map) {
+        const div = L.DomUtil.create('div', 'map-bottom-left-legend');
+        
+        div.innerHTML = `
+    <div class="panel-contents" id="map_legend">
+    </div>`;
+        // コントロール内の操作が地図ドラッグに奪われないようにする
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div); 
+        return div;
+      }
+    });
+    socket.on('result', (res) => {
+      const overlays = addNaivePointMarkerLayer(map,res.geoJson.naive);
+      myLegend = new BottomLeftLegend().addTo(map);
+      document.getElementById('map_legend')?.replaceChildren();
+      const ul = document.createElement('div');
+      ul.className = 'legend_ul';
+      const palette = [];
+      for(const cat in res.palette){
+        palette.push({category:cat,fill:res.palette[cat].color,stroke:res.palette[cat].darken});
+      }
+      ul.innerHTML = generateLegend(palette);
+      L.control.layers([baseLayer], {...overlays, "Hex Grid":hexLayer, "Tri Grid":triLayer}, {position: 'topleft'} ).addTo(map);
+      document.getElementById("map_legend")?.appendChild(ul);
+    });
 
     // 地図
     const map = L.map('map', {
       zoomControl: true
     }).setView([lat, lon], 12);
+    const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    /*
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
-
+    */
     // Drawn items
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
@@ -158,6 +202,7 @@
     let hexLayer = null;
     let triLayer = null;
     let myStartBtn = null;
+    let myLegend = null;
     let hexLayerIndex = {}; // hexId -> layer
     let triLayerIndex = {}; // triangleId -> layer
     let hexLabelLayer = L.layerGroup(); // Hex IDラベル群
@@ -245,6 +290,8 @@
     function renderLayers(hexFC, trianglesFC) {
       if (hexLayer) map.removeLayer(hexLayer);
       if (triLayer) map.removeLayer(triLayer);
+      document.getElementById('map_legend')?.replaceChildren();
+      if (myLegend) map.removeControl(myLegend);
       if (myStartBtn) map.removeControl(myStartBtn);
       hexLabelLayer.removeFrom(map);
       hexLayerIndex = {};
@@ -283,6 +330,7 @@
           btn.addEventListener('click', (ev) => {
             ev.preventDefault();
             ev.stopPropagation(); // 念のため地図へのバブリングも止める
+            if (myStartBtn) map.removeControl(myStartBtn);
             // ---- 任意の処理 ----
             socket.emit("crawling", {
               sessionId: sessionId,
@@ -445,6 +493,11 @@
         map.removeControl(myStartBtn);
         myStartBtn = null;
       }
+      if(myLegend){
+        document.getElementById('map_legend')?.replaceChildren();
+        map.removeControl(myLegend);
+        myLegend = null;
+      }
       hexLabelLayer.removeFrom(map);
       document.getElementById('bboxLabel').textContent = '';
     });
@@ -495,6 +548,11 @@
       if(myStartBtn){
         map.removeControl(myStartBtn);
         myStartBtn = null;
+      }
+      if(myLegend){
+        document.getElementById('map_legend')?.replaceChildren();
+        map.removeControl(myLegend);
+        myLegend = null;
       }
       hexLabelLayer.removeFrom(map);
       document.getElementById('bboxLabel').textContent = '';
