@@ -296,3 +296,23 @@ text-shadow: 0 1px 1px #0006;
 /* サイズのプリセット（任意で利用） */
 .is-sm { --pb-height: 8px; }
 .is-lg { --pb-height: 22px; }
+
+/* ダウンロードボタン */
+  .dl-btn{
+    display:inline-flex; align-items:center; gap:6px;
+    height:32px; padding:0 10px; border:1px solid #ccc; border-radius:8px;
+    background:#fff; color:#333; font-size:13px; line-height:1; cursor:pointer;
+    box-shadow:0 1px 2px rgba(0,0,0,.06);
+  }
+  .dl-btn:hover{ background:#f7f7f7; }
+  .dl-btn:active{ transform:translateY(1px); }
+  .dl-btn:focus{ outline:2px solid #2684ff33; outline-offset:2px; }
+  /* 画面が極端に狭い時はラベルを省略（任意） */
+  @media (max-width: 420px){
+    .dl-btn .label{ display:none; }
+    .dl-btn{ width:32px; padding:0; justify-content:center; }
+  }
+  .center-x {
+    display: flex;
+    justify-content: center;  /* 横中央 */
+  }
