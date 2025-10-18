@@ -134,7 +134,8 @@ function edgeKey(a, b, digits = 6) {
   return k1 < k2 ? k1 : k2;
 }
 
-function toMySQLDatetime(date = new Date()) {
+function defaultMaxUploadTime(date = new Date()) {
+  /*
   const p = n => String(n).padStart(2, '0');
   return [
     date.getFullYear(),
@@ -145,6 +146,8 @@ function toMySQLDatetime(date = new Date()) {
     p(date.getMinutes()),
     p(date.getSeconds())
   ].join(':');
+  */
+  return Math.floor(date / 1000)- 360;
 }
 
 function concatFC(fc1, fc2) {
@@ -215,7 +218,7 @@ io.on("connection", (socket) => {
         sessionId: req.sessionId,
         //tags: targets[req.sessionId].tags,
         categories: targets[req.sessionId].categories,
-        max_upload_date: toMySQLDatetime(),
+        max_upload_date: defaultMaxUploadTime(),
       });
     }
     catch (e) {
@@ -227,7 +230,7 @@ io.on("connection", (socket) => {
   // クロール範囲指定
   socket.on("target", (req) => {
     try {
-      console.log("target:", req);
+      //console.log("target:", req);
       if (sessionId !== req.sessionId) {
         console.warn("invalid sessionId:", req.sessionId);
         return;
@@ -275,7 +278,7 @@ io.on("connection", (socket) => {
         true, // Using Force Vector instead of k-Means
         50, // Steps (quality)
         false, // Ultra precision
-        'Default' // Color distance type (colorblindness)
+        'CMC' // Color distance type (colorblindness)
       );
       // Sort colors by differenciation first
       const palette = paletteGenerator.diffSort(colors, 'Default');
@@ -402,10 +405,17 @@ function resolveWorkerFilename(taskName) {
 
 const statsItems = (crawler, target,) => {
   const stats = [];
+  const total = [];
+  const crawled = [];
+  const progress = [];
   let finish = Object.keys(target.categories).length * target.hex.features.length;
   for (const [hexId, tagsObj] of Object.entries(crawler)) {
+    total[hexId] = 0;
+    crawled[hexId] = 0;
     for (const [category, items] of Object.entries(tagsObj)) {
       finish -= (items.final === true) ? 1 : 0;
+      total[hexId] += items.total;
+      crawled[hexId] += items.crawled;
       for (const item of items.items.features) {
         //console.log(item.properties)
         stats[hexId] ??= [];
@@ -414,9 +424,14 @@ const statsItems = (crawler, target,) => {
         stats[hexId][item.properties.splatone_triId][category] += 1;
       }
     }
+    progress[hexId] = {
+      percent: total[hexId] == 0 ? 1 : crawled[hexId] / total[hexId],
+      crawled: crawled[hexId],
+      total: total[hexId]
+    };
   }
-  console.log(finish, "of", Object.keys(target.categories).length * target.hex.features.length);
-  return { stats, finish: (finish == 0) };
+  //console.table(progress);
+  return { stats, progress, finish: (finish == 0) };
 };
 
 export async function runTask(taskName, data) {
@@ -425,24 +440,36 @@ export async function runTask(taskName, data) {
   return piscina.run(data, { filename });
 }
 
+const nParallel = Math.max(1, Math.min(12, os.cpus().length))
 const piscina = new Piscina({
   minThreads: 1,
-  maxThreads: Math.max(1, Math.min(4, os.cpus().length)),
+  maxThreads: nParallel,
   idleTimeout: 10_000,
   // 注意：ここで filename は渡さない。run 時に切り替える
 });
-
+console.log("Parallel",nParallel);
 await subscribe('splatone:start', async p => {
   //console.log('[splatone:start]', p);
   const rtn = await runTask(p.plugin, p);
   //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
   crawlers[p.sessionId][rtn.hexId] ??= {};
   crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
+  crawlers[p.sessionId][rtn.hexId][rtn.category].ids ??= new Set();
+  const duplicates = ((A, B) => new Set([...A].filter(x => B.has(x))))(rtn.ids, crawlers[p.sessionId][rtn.hexId][rtn.category].ids);
+  crawlers[p.sessionId][rtn.hexId][rtn.category].ids = new Set([...crawlers[p.sessionId][rtn.hexId][rtn.category].ids, ...rtn.ids]);
   crawlers[p.sessionId][rtn.hexId][rtn.category].final = rtn.final;
-  crawlers[p.sessionId][rtn.hexId][rtn.category].items = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, rtn.photos);
-  //console.log(crawlers[p.sessionId]);
-  const { stats, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
+  crawlers[p.sessionId][rtn.hexId][rtn.category].crawled ??= 0;
+  crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
+  crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
+  console.log(`(CRAWL) ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
+  //console.log(Array.from( duplicates));
+  const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
 
+  crawlers[p.sessionId][rtn.hexId][rtn.category].items
+    = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, photos);
+  //console.log(crawlers[p.sessionId]);
+  const { stats, progress, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
+  io.to(p.sessionId).emit('progress', { hexId: rtn.hexId, progress });
   if (!rtn.final) {
     // 次回クロール用に更新
     p.max_upload_date = rtn.next_max_upload_date;
