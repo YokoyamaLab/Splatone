@@ -188,6 +188,17 @@ body,
   padding: 10px;
 }
 
+.map-bottom-left-progressbar {
+  width: 500px;
+  /* 好きな幅 */
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, .12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  overflow: visible;
+  backdrop-filter: blur(6px);
+}
+
 .map-bottom-left-legend {
   width: 160px;
   /* 好きな幅 */
@@ -199,15 +210,16 @@ body,
   backdrop-filter: blur(6px);
   /* 対応ブラウザで半透明の質感UP */
 }
-
+.map-bottom-left-progressbar .panel-contents,
 .map-bottom-left-legend .panel-contents {
   padding: 10px;
 }
 
-.legend_ul{
+.legend_ul {
   list-style: none;
   padding-left: 0;
 }
+
 .legend_circle {
   display: inline-block;
   width: 16px;
@@ -216,8 +228,71 @@ body,
   border: 1px solid #000;
   background: skyblue;
 }
+
 .legend_category {
-  padding-left:0.5em;
-  vertical-align : super;
+  padding-left: 0.5em;
+  vertical-align: super;
   font-weight: bold;
 }
+
+/* プログレスバー */
+:root {
+--pb-height: 14px;
+--pb-radius: 999px;
+--pb-track: hsl(220 10% 18% / 0.25);
+--pb-fill: linear-gradient(90deg, hsl(200 90% 60%), hsl(260 90% 65%));
+--pb-border: hsl(220 10% 90% / 0.6);
+--pb-shadow: 0 1px 0 hsl(0 0% 100% / 0.3) inset,
+0 0 0 1px hsl(220 10% 5% / 0.04) inset,
+0 1px 2px hsl(220 20% 10% / 0.25);
+--pb-transition: 240ms cubic-bezier(.2,.8,.2,1);
+}
+
+
+@media (prefers-color-scheme: dark) {
+:root {
+--pb-track: hsl(220 10% 30% / 0.35);
+--pb-border: hsl(220 10% 25% / 0.9);
+}
+}
+
+
+/* 任意幅: 親要素の幅に追従（100%）。必要に応じて親に width を指定してください。 */
+.progress-wrap { width: 100%; max-width: 100%; }
+
+
+.progress {
+--value: 0; /* 0 - 100 */
+position: relative;
+width: 100%;
+height: var(--pb-height);
+background: var(--pb-track);
+border-radius: var(--pb-radius);
+overflow: clip;
+box-shadow: var(--pb-shadow);
+border: 1px solid var(--pb-border);
+}
+
+
+.progress__bar {
+width: calc(var(--value) * 1%);
+height: 100%;
+background: var(--pb-fill);
+background-size: 200% 100%;
+transition: width var(--pb-transition);
+}
+
+
+.progress__label {
+position: absolute;
+inset: 0; display: grid; place-items: center;
+font-size: 12px; font-variant-numeric: tabular-nums;
+color: hsl(0 0% 100% / .9);
+pointer-events: none;
+text-shadow: 0 1px 1px #0006;
+}
+
+
+/* サイズのプリセット（任意で利用） */
+.is-sm { --pb-height: 8px; }
+.is-lg { --pb-height: 22px; }

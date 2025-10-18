@@ -108,6 +108,15 @@
       path: "/socket",
       reconnection: false
     });
+
+    function setProgress(el, value){
+      //プログレスバー
+      const v = Math.max(0, Math.min(100, Number(value)));
+      el.style.setProperty('--value', v);
+      el.setAttribute('aria-valuenow', String(v));
+      const label = el.querySelector('.progress__label');
+      if (label) label.textContent = v + '%';
+    }
     socket.on('connect', () => {
       //console.log('Connected to server');
     });
@@ -125,6 +134,27 @@
         (memo,legend)=>{return memo + `<li><span class="legend_circle" style="border-color:${legend.stroke};background:${legend.fill};"></span><span class="legend_category">${legend.category}</spam></li>`},
         "");
     }
+    const BottomLeftProgressBar = L.Control.extend({
+    options: {
+        position: 'bottomleft'
+      },
+      onAdd(map) {
+        const div = L.DomUtil.create('div', 'map-bottom-left-progressbar');
+        
+        div.innerHTML = `
+    <div class="panel-contents">
+    <!-- 幅は親 .progress-wrap の width/max-width で制御。 -->
+    <div id="progressCrawl" class="progress is-lg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="32" aria-label="進捗" style="--value:32">
+    <div class="progress__bar" aria-hidden="true"></div>
+    <div class="progress__label" aria-hidden="true">32%</div>
+    </div>
+    </div>`;
+        // コントロール内の操作が地図ドラッグに奪われないようにする
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div); 
+        return div;
+      }
+    });
     const BottomLeftLegend = L.Control.extend({
       options: {
         position: 'bottomleft'
@@ -141,8 +171,29 @@
         return div;
       }
     });
+    socket.on('progress',(res)=>{
+      //console.table(res.progress);
+      //console.log(Object.values(res.progress));
+      const { crawled, total } = Object.values(res.progress).reduce(
+        (acc, g) => (g==null?acc:{
+          crawled: acc.crawled + (g.crawled ?? 0),
+          total:   acc.total   + (g.total   ?? 0)
+        }),
+        { crawled: 0, total: 0 }
+      );
+      if(total==0){crawled=1, total=1;}
+      const percent = Math.round((crawled / total) * 100);
+      console.log(`[Done] ${crawled} / ${total} --> ${percent}`);
+      setProgress(document.getElementById("progressCrawl"),percent);
+      //ここでHexのプログレスグラデーションレイヤのOpacity調整
+      highlightHexById(res.hexId,1 - res.progress[res.hexId].percent,"#263238");
+    });
+
     socket.on('result', (res) => {
+      clearHexHighlight();
       const overlays = addNaivePointMarkerLayer(map,res.geoJson.naive);
+      //進捗バーを消して凡例を表示
+      if (myProgress) map.removeControl(myProgress);
       myLegend = new BottomLeftLegend().addTo(map);
       document.getElementById('map_legend')?.replaceChildren();
       const ul = document.createElement('div');
@@ -186,7 +237,7 @@
         rectangle: {
           shapeOptions: {
             weight: 1,
-            fillOpacity: 0.05
+            fillOpacity: 0
           }
         }
       },
@@ -203,6 +254,7 @@
     let triLayer = null;
     let myStartBtn = null;
     let myLegend = null;
+    let myProgress = null;
     let hexLayerIndex = {}; // hexId -> layer
     let triLayerIndex = {}; // triangleId -> layer
     let hexLabelLayer = L.layerGroup(); // Hex IDラベル群
@@ -216,20 +268,24 @@
     function clearHexHighlight() {
       Object.values(hexLayerIndex).forEach(layer => {
         layer.setStyle({
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 0.15
+          weight: 2,
+          opacity: 0.5,
+          fillOpacity: 0.1,
+          color: "#37474F",
+          fillColor: "#546E7A",
         });
       });
     }
 
-    function highlightHexById(hexId) {
+    function highlightHexById(hexId, fillOpacity=0.7, fillColor="#3949AB") {
       const layer = hexLayerIndex[hexId];
       if (layer) {
         layer.setStyle({
-          weight: 3,
+          weight: 2,
           opacity: 1,
-          fillOpacity: 0.20
+          fillOpacity: fillOpacity,
+          color: "#37474F",
+          fillColor: fillColor,
         });
         if (layer.bringToFront) layer.bringToFront();
       }
@@ -239,16 +295,24 @@
       Object.values(triLayerIndex).forEach(layer => {
         layer.setStyle({
           weight: 1,
-          opacity: 0.9,
-          fillOpacity: 0.10
+          opacity: 0.8,
+          fillOpacity: 0,
+          fillColor: "#EC407A",
+          color: "#F50057",
+          dashArray: "10 20",
+          dashOffset: 10,
         });
       });
     }
 
     function highlightTriangle(triId, style = {
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.20
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.5,
+          fillColor: "#EC407A",
+          color: "#F50057",
+          dashArray: "15,30",
+          dashOffset: 0,
     }) {
       const layer = triLayerIndex[triId];
       if (layer) {
@@ -300,9 +364,11 @@
       // 六角形
       hexLayer = L.geoJSON(hexFC, {
         style: {
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 0.15
+          weight: 2,
+          opacity: 0.5,
+          fillOpacity: 0.1,
+          color: "#37474F",
+          fillColor: "#546E7A",
         },
         onEachFeature: (feature, layer) => {
           const hid = feature.properties?.hexId;
@@ -331,6 +397,7 @@
             ev.preventDefault();
             ev.stopPropagation(); // 念のため地図へのバブリングも止める
             if (myStartBtn) map.removeControl(myStartBtn);
+            myProgress = new BottomLeftProgressBar().addTo(map);            
             // ---- 任意の処理 ----
             socket.emit("crawling", {
               sessionId: sessionId,
@@ -348,8 +415,12 @@
       triLayer = L.geoJSON(trianglesFC, {
         style: {
           weight: 1,
-          opacity: 0.9,
-          fillOpacity: 0.10
+          opacity: 0.8,
+          fillOpacity: 0,
+          fillColor: "#EC407A",
+          color: "#F50057",
+          dashArray: "15,30",
+          dashOffset: 0,
         },
         onEachFeature: (feature, layer) => {
           const pid = feature.properties?.parentHexId ?? 'N/A';

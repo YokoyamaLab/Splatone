@@ -26,12 +26,18 @@ export default async function ({
         page: 1,
         sort: "date-posted-desc"
     });
-    console.log("[(Crawl)",hex.properties.hexId,category,"]",(new Date(max_upload_date * 1000)).toLocaleString(),"-> photos:",res.photos.photo.length,"/",res.photos.total);
+    //console.log(baseParams);
+    //console.log("[(Crawl)", hex.properties.hexId, category, "]", (new Date(max_upload_date * 1000)).toLocaleString(), "-> photos:", res.photos.photo.length, "/", res.photos.total);
+    const ids = [];
+    const authors = {};
     const photos = featureCollection(res.photos.photo.filter(photo => {
+        authors[photo.owner] ??= 0;
+        authors[photo.owner]++;
         return booleanPointInPolygon(point([photo.longitude, photo.latitude]), hex);
     }).map(photo => {
+        ids.push(photo.id);
         const getTriangleContainingPoint = (point, triangles) => {
-            const rtn= triangles.features.filter(tri => {
+            const rtn = triangles.features.filter(tri => {
                 return booleanPointInPolygon(point, tri);
             });
             return rtn[0]?.properties?.triangleId.split('-')[1] || null;
@@ -46,10 +52,26 @@ export default async function ({
             }
         );
     }));
+    const outside = res.photos.photo.length - photos.features.length;
     //console.log(JSON.stringify(photos, null, 4));
-    const next_max_upload_date = res.photos.photo.length > 0
-        ? (res.photos.photo[res.photos.photo.length - 1].dateupload) - (res.photos.photo[res.photos.photo.length - 1].dateupload == res.photos.photo[0].dateupload ? 1 : 0)
-        : null;
-
-    return { photos, hexId: hex.properties.hexId, tags, category, next_max_upload_date, final: res.photos.photo.length == res.photos.total };
+    let next_max_upload_date
+        = res.photos.photo.length > 0
+            ? (res.photos.photo[res.photos.photo.length - 1].dateupload) - (res.photos.photo[res.photos.photo.length - 1].dateupload == res.photos.photo[0].dateupload ? 1 : 0)
+            : null;
+    if (Object.keys(authors).length == 1) {
+        const window = res.photos.photo[res.photos.photo.length - 1].dateupload - res.photos.photo[0].dateupload;
+        console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within {$window}. the crawler will skip the next 24 hours.`);
+        next_max_upload_date -= 60 * 60 * 24;
+    }
+    return {
+        photos,
+        hexId: hex.properties.hexId,
+        tags,
+        category,
+        next_max_upload_date,
+        total: res.photos.total,
+        outside: outside,
+        ids,
+        final: res.photos.photo.length == res.photos.total
+    };
 }
