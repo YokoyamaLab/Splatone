@@ -16,6 +16,9 @@ export default class FlickrPlugin extends PluginBase {
     }
 
     // 任意の公開メソッド
+    async save(){
+        
+    }
     async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, sessionId }) {
         if (!this.started) {
             this.start();

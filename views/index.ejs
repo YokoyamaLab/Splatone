@@ -3,7 +3,9 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title><%= title %></title>
+  <title>
+    <%= title %>
+  </title>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
@@ -47,9 +49,9 @@
         <label class="field">
           <span>units</span>
           <select id="units">
-            <option value="kilometers" <%= defaultUnits==='kilometers'?'selected':'' %>>kilometers</option>
-            <option value="meters" <%= defaultUnits==='meters'?'selected':'' %>>meters</option>
-            <option value="miles" <%= defaultUnits==='miles'?'selected':'' %>>miles</option>
+            <option value="kilometers" <%=defaultUnits==='kilometers' ?'selected':'' %>>kilometers</option>
+            <option value="meters" <%=defaultUnits==='meters' ?'selected':'' %>>meters</option>
+            <option value="miles" <%=defaultUnits==='miles' ?'selected':'' %>>miles</option>
           </select>
         </label>
 
@@ -95,7 +97,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
   <!-- Leaflet.draw JS -->
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin="anonymous"></script>
-  
+
   <!-- Socket.IO JS -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <!-- Visualize.js -->
@@ -109,7 +111,7 @@
       reconnection: false
     });
 
-    function setProgress(el, value){
+    function setProgress(el, value) {
       //プログレスバー
       const v = Math.max(0, Math.min(100, Number(value)));
       el.style.setProperty('--value', v);
@@ -117,6 +119,22 @@
       const label = el.querySelector('.progress__label');
       if (label) label.textContent = v + '%';
     }
+
+    function downloadJSON(filename, obj) {
+      const json = JSON.stringify(obj, null, 2);
+      const blob = new Blob([json], {
+        type: "application/json"
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
     socket.on('connect', () => {
       //console.log('Connected to server');
     });
@@ -124,23 +142,26 @@
     socket.on('disconnect', () => {
       //console.log('Disconnected from server');
     });
-    let sessionId = null;
+
     socket.on("welcome", (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
       sessionId = res.sessionId;
     });
-    function generateLegend(legends){
+
+    function generateLegend(legends) {
       return legends.reduce(
-        (memo,legend)=>{return memo + `<li><span class="legend_circle" style="border-color:${legend.stroke};background:${legend.fill};"></span><span class="legend_category">${legend.category}</spam></li>`},
+        (memo, legend) => {
+          return memo + `<li><span class="legend_circle" style="border-color:${legend.stroke};background:${legend.fill};"></span><span class="legend_category">${legend.category}</spam></li>`
+        },
         "");
     }
     const BottomLeftProgressBar = L.Control.extend({
-    options: {
+      options: {
         position: 'bottomleft'
       },
       onAdd(map) {
         const div = L.DomUtil.create('div', 'map-bottom-left-progressbar');
-        
+
         div.innerHTML = `
     <div class="panel-contents">
     <!-- 幅は親 .progress-wrap の width/max-width で制御。 -->
@@ -151,7 +172,7 @@
     </div>`;
         // コントロール内の操作が地図ドラッグに奪われないようにする
         L.DomEvent.disableClickPropagation(div);
-        L.DomEvent.disableScrollPropagation(div); 
+        L.DomEvent.disableScrollPropagation(div);
         return div;
       }
     });
@@ -161,37 +182,60 @@
       },
       onAdd(map) {
         const div = L.DomUtil.create('div', 'map-bottom-left-legend');
-        
+
         div.innerHTML = `
-    <div class="panel-contents" id="map_legend">
+    <div class="panel-contents">
+      <div id="map_legend">
+      </div>
+      <div class="center-x">
+        <button id="download-json" class="dl-btn" title="Download JSON">
+          <!-- インラインSVG（ダウンロードアイコン） -->
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M12 3v9m0 0l4-4m-4 4L8 8m-5 9v2a2 2 0 002 2h14a2 2 0 002-2v-2"
+                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="label">ダウンロード</span>
+        </button>
+      </div>
     </div>`;
         // コントロール内の操作が地図ドラッグに奪われないようにする
         L.DomEvent.disableClickPropagation(div);
-        L.DomEvent.disableScrollPropagation(div); 
+        L.DomEvent.disableScrollPropagation(div);
         return div;
       }
     });
-    socket.on('progress',(res)=>{
+    socket.on('progress', (res) => {
       //console.table(res.progress);
       //console.log(Object.values(res.progress));
-      const { crawled, total } = Object.values(res.progress).reduce(
-        (acc, g) => (g==null?acc:{
+      const {
+        crawled,
+        total
+      } = Object.values(res.progress).reduce(
+        (acc, g) => (g == null ? acc : {
           crawled: acc.crawled + (g.crawled ?? 0),
-          total:   acc.total   + (g.total   ?? 0)
-        }),
-        { crawled: 0, total: 0 }
+          total: acc.total + (g.total ?? 0)
+        }), {
+        crawled: 0,
+        total: 0
+      }
       );
-      if(total==0){crawled=1, total=1;}
+      if (total == 0) {
+        crawled = 1, total = 1;
+      }
       const percent = Math.round((crawled / total) * 100);
       console.log(`[Done] ${crawled} / ${total} --> ${percent}`);
-      setProgress(document.getElementById("progressCrawl"),percent);
+      setProgress(document.getElementById("progressCrawl"), percent);
       //ここでHexのプログレスグラデーションレイヤのOpacity調整
-      highlightHexById(res.hexId,1 - res.progress[res.hexId].percent,"#263238");
+      highlightHexById(res.hexId, 1 - res.progress[res.hexId].percent, "#263238");
     });
 
+    let latestResult = {};
     socket.on('result', (res) => {
+      latestResult["_"]["visualizers"] = res.visualizers;
+      latestResult["_"]["plugin"] = res.plugin;
       clearHexHighlight();
-      const overlays = addNaivePointMarkerLayer(map,res.geoJson.naive);
+      latestResult = {...latestResult, ...res.geoJson};
+      const overlays = addNaivePointMarkerLayer(map, res.geoJson.naive);
       //進捗バーを消して凡例を表示
       if (myProgress) map.removeControl(myProgress);
       myLegend = new BottomLeftLegend().addTo(map);
@@ -199,16 +243,32 @@
       const ul = document.createElement('div');
       ul.className = 'legend_ul';
       const palette = [];
-      for(const cat in res.palette){
-        palette.push({category:cat,fill:res.palette[cat].color,stroke:res.palette[cat].darken});
+      for (const cat in res.palette) {
+        palette.push({
+          category: cat,
+          fill: res.palette[cat].color,
+          stroke: res.palette[cat].darken
+        });
       }
       ul.innerHTML = generateLegend(palette);
-      L.control.layers([baseLayer], {...overlays, "Hex Grid":hexLayer, "Tri Grid":triLayer}, {position: 'topleft'} ).addTo(map);
+      L.control.layers([baseLayer], {
+        ...overlays,
+        "Hex Grid": hexLayer,
+        "Tri Grid": triLayer
+      }, {
+        position: 'topleft'
+      }).addTo(map);
       document.getElementById("map_legend")?.appendChild(ul);
+      document.getElementById("download-json").addEventListener("click", () => {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        downloadJSON(`data-${stamp}.json`, latestResult);
+        let sessionId = null;
+      });
     });
 
     // 地図
     const map = L.map('map', {
+      preferCanvas:true,
       zoomControl: true
     }).setView([lat, lon], 12);
     const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -225,11 +285,15 @@
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
-    // Draw control（矩形のみ）
+    // Draw control（矩形・ポリゴンのみ）
     const drawControl = new L.Control.Draw({
       position: 'topleft',
       draw: {
-        polygon: false,
+        polygon: {
+          allowIntersection: false,
+          showArea: true,
+          metric: true,
+        },
         polyline: false,
         marker: false,
         circle: false,
@@ -241,11 +305,11 @@
           }
         }
       },
-      edit: {
+      /* edit: {
         featureGroup: drawnItems,
         edit: true,
         remove: true
-      }
+      }*/
     });
     map.addControl(drawControl);
 
@@ -277,7 +341,7 @@
       });
     }
 
-    function highlightHexById(hexId, fillOpacity=0.7, fillColor="#3949AB") {
+    function highlightHexById(hexId, fillOpacity = 0.7, fillColor = "#3949AB") {
       const layer = hexLayerIndex[hexId];
       if (layer) {
         layer.setStyle({
@@ -306,13 +370,13 @@
     }
 
     function highlightTriangle(triId, style = {
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 0.5,
-          fillColor: "#EC407A",
-          color: "#F50057",
-          dashArray: "15,30",
-          dashOffset: 0,
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.5,
+      fillColor: "#EC407A",
+      color: "#F50057",
+      dashArray: "15,30",
+      dashOffset: 0,
     }) {
       const layer = triLayerIndex[triId];
       if (layer) {
@@ -397,7 +461,7 @@
             ev.preventDefault();
             ev.stopPropagation(); // 念のため地図へのバブリングも止める
             if (myStartBtn) map.removeControl(myStartBtn);
-            myProgress = new BottomLeftProgressBar().addTo(map);            
+            myProgress = new BottomLeftProgressBar().addTo(map);
             // ---- 任意の処理 ----
             socket.emit("crawling", {
               sessionId: sessionId,
@@ -492,34 +556,29 @@
     }
 
     // API呼び出し
-    async function loadHexgridByBounds(bounds) {
+    async function loadHexgridByBounds(bounds, drawn = null) {
       const bbox = boundsToBbox(bounds);
       document.getElementById('bboxLabel').textContent = `BBOX: ${bbox}`;
 
       const cellSize = document.getElementById('cellSize').value.trim();
       const units = document.getElementById('units').value.trim();
       const keywords = document.getElementById('keywords').value.trim();
-      /*
-      const url = `/api/hexgrid?bbox=${encodeURIComponent(bbox)}&cellSize=${encodeURIComponent(cellSize)}&units=${encodeURIComponent(units)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'API error');
-      }
-      const { hex, triangles } = await res.json();
-      */
-
+      latestResult["_"]??={};
+      latestResult["_"]["keywords"] = keywords;
       socket.once("hexgrid", (res) => {
         if (res.sessionId) sessionId = res.sessionId;
         //console.log(`hexgrid received (${res.hex.features.length} hexes, ${res.triangles.features.length} triangles)`);
         const hex = res.hex;
         const triangles = res.triangles;
+        latestResult["_"]["hex"] = hex;
+        latestResult["_"]["triangles"]=[triangles];
         renderLayers(hex, triangles);
       });
       socket.emit("target", {
         sessionId: sessionId,
         query: {
           bbox: bbox,
+          drawn: drawn,
           cellSize: cellSize,
           units: units,
           tags: keywords
@@ -533,7 +592,7 @@
       const layer = e.layer;
       drawnItems.addLayer(layer);
       try {
-        await loadHexgridByBounds(layer.getBounds());
+        await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON());
       } catch (err) {
         alert(err.message);
       }
@@ -543,7 +602,7 @@
       const layers = drawnItems.getLayers();
       if (layers.length === 1) {
         try {
-          await loadHexgridByBounds(layers[0].getBounds());
+          await loadHexgridByBounds(layers[0].getBounds(), layers[0].toGeoJSON());
         } catch (err) {
           alert(err.message);
         }
@@ -560,11 +619,11 @@
         map.removeLayer(triLayer);
         triLayer = null;
       }
-      if(myStartBtn){
+      if (myStartBtn) {
         map.removeControl(myStartBtn);
         myStartBtn = null;
       }
-      if(myLegend){
+      if (myLegend) {
         document.getElementById('map_legend')?.replaceChildren();
         map.removeControl(myLegend);
         myLegend = null;
@@ -616,11 +675,11 @@
         map.removeLayer(triLayer);
         triLayer = null;
       }
-      if(myStartBtn){
+      if (myStartBtn) {
         map.removeControl(myStartBtn);
         myStartBtn = null;
       }
-      if(myLegend){
+      if (myLegend) {
         document.getElementById('map_legend')?.replaceChildren();
         map.removeControl(myLegend);
         myLegend = null;
