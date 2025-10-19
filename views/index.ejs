@@ -207,7 +207,7 @@
     socket.on('progress', (res) => {
       //console.table(res.progress);
       //console.log(Object.values(res.progress));
-      const {
+      let {
         crawled,
         total
       } = Object.values(res.progress).reduce(
@@ -235,7 +235,7 @@
       latestResult["_"]["plugin"] = res.plugin;
       clearHexHighlight();
       latestResult = {...latestResult, ...res.geoJson};
-      const overlays = addNaivePointMarkerLayer(map, res.geoJson.naive);
+      const overlays = addBulkyPointMarkerLayer(map, res.geoJson.bulky);
       //進捗バーを消して凡例を表示
       if (myProgress) map.removeControl(myProgress);
       myLegend = new BottomLeftLegend().addTo(map);
