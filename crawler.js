@@ -31,7 +31,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // コマンド例
-// node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vN
+// node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vB
 //
 try {
   const argv = await yargs(hideBin(process.argv))
@@ -58,9 +58,9 @@ try {
       default: false,
       description: 'Splatone Heatmapで表示(未対応)'
     })
-    .option('vis-naive', {
+    .option('vis-bulky', {
       group: 'Visualization',
-      alias: 'vN',
+      alias: 'vB',
       type: 'boolean',
       default: false,
       description: 'ポイントマーカーで全表示'
@@ -81,7 +81,7 @@ try {
     })
     .parseAsync();
 
-  const visualizer_all = ["splatone", "naive"];
+  const visualizer_all = ["splatone", "bulky"];
   const visualizers = visualizer_all.filter(v => argv[`vis-${v}`]);
   console.log("Visualizer layers:", visualizers.join(", ") || "(none)");
   const plugin_options = argv.options;

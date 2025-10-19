@@ -11,7 +11,7 @@ function addGeoJSONLayer(map, geojson, options = {}) {
     return geojsonLayer;
 }
 
-function addNaivePointMarkerLayer(map, geojson, options = {}) {
+function addBulkyPointMarkerLayer(map, geojson, options = {}) {
     const layers = {};
     for (const cat in geojson) {
         const layer = addGeoJSONLayer(map, geojson[cat], {

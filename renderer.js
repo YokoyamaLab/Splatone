@@ -7,7 +7,7 @@ export default {
         //writeFileSync('debug.result.json', JSON.stringify(result, null, 2) + '\n', 'utf8');
         return result;
     },
-    naive: (result, target) => {
+    bulky: (result, target) => {
         //console.log(JSON.stringify(target, null, 4));
         const layers = {};
         for (const hex in result) {
