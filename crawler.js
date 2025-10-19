@@ -14,18 +14,16 @@ import open from 'open';
 import Piscina from 'piscina';
 import uniqid from 'uniqid';
 import { Server as IOServer } from 'socket.io';
-import { buffer, union, dissolve, convex, concave, point, centroid, feature, getGeom, featureCollection, hexGrid, polygon } from '@turf/turf';
-import intersect from '@turf/intersect';
+import { centroid, featureCollection, hexGrid, polygon } from '@turf/turf';
 import booleanWithin from '@turf/boolean-within';
-import area from '@turf/area';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 // Local
-import { loadPlugins } from './pluginLoader.js';
-import renderer from './renderer.js';
-import paletteGenerator from './paletteGenerator.js';
-import { render } from 'ejs';
+import { loadPlugins } from './lib/pluginLoader.js';
+import renderer from './lib/renderer.js';
+import paletteGenerator from './lib/paletteGenerator.js';
+//import { render } from 'ejs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -85,7 +83,7 @@ try {
   const visualizers = visualizer_all.filter(v => argv[`vis-${v}`]);
   console.log("Visualizer layers:", visualizers.join(", ") || "(none)");
   const plugin_options = argv.options;
-  console.table([["Visualizer",visualizers],["Plugin",argv.plugin]]);
+  console.table([["Visualizer", visualizers], ["Plugin", argv.plugin]]);
 
   /* API Key読み込み */
   async function loadAPIKey(plugin = 'flickr') {

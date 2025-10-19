@@ -1,5 +1,5 @@
 // plugins/hello/index.js
-import { PluginBase } from '../../PluginBase.js';
+import { PluginBase } from '../../lib/PluginBase.js';
 import { bbox, polygon, centroid, booleanPointInPolygon, featureCollection } from '@turf/turf';
 
 export default class FlickrPlugin extends PluginBase {
@@ -17,7 +17,7 @@ export default class FlickrPlugin extends PluginBase {
 
     // 任意の公開メソッド
     async save(){
-        
+
     }
     async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, sessionId }) {
         if (!this.started) {
