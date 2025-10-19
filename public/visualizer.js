@@ -1,4 +1,5 @@
-
+//targets[sessionId] = { hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
+//
 function addGeoJSONLayer(map, geojson, options = {}) {
     if (!map || !geojson) return null;
 
