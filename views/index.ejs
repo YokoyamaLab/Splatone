@@ -145,6 +145,7 @@
 
     let sessionId=null;
     let visualizers = {};
+    let layerControl=null;
     socket.on("welcome",async (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
       console.log("VIS",res.visualizers);
@@ -239,6 +240,7 @@
       const proto = Object.getPrototypeOf(a);
       return proto === Object.prototype || proto === null;     // {} / Object.create(null)
     }
+
     let latestResult = {};
     const overlays = {};
     socket.on('result',async (res) => {
@@ -249,8 +251,11 @@
       console.log("result");
       console.log("geoJSON",res.geoJson);
       for(const vis in visualizers){
-        const layers = await visualizers[vis](map, res.geoJson[vis]);
-        if(layers.hasOwnProperty("type") && layers["type"]=="FeatureCollection"){
+        const layers = await visualizers[vis](map, res.geoJson[vis], {palette:res.palette});
+        console.log("【レイヤ】",layers);
+        if((layers == null) ){
+          //SKIP
+        }else if(layers.hasOwnProperty("type") && layers["type"]=="FeatureCollection"){
           //レイヤ一つ
           overlays[`[${vis}]`] =  layers;
         }else{
@@ -275,13 +280,14 @@
       }
       ul.innerHTML = generateLegend(palette);
       console.log(overlays);
-      L.control.layers([baseLayer], {
+      layerControl = L.control.layers([baseLayer], {
         ...overlays,
         "Hex Grid": hexLayer,
         "Tri Grid": triLayer
       }, {
         position: 'topleft'
-      }).addTo(map);
+      });
+      layerControl.addTo(map);
       document.getElementById("map_legend")?.appendChild(ul);
       document.getElementById("download-json").addEventListener("click", () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
