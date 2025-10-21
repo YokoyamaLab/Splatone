@@ -1,14 +1,19 @@
+import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
 import { writeFileSync } from 'node:fs';
 
-export default {
-    splatone: (result, target) => {
-        //writeFileSync('debug.target.json', JSON.stringify(target, null, 2) + '\n', 'utf8');
-        //writeFileSync('debug.result.json', JSON.stringify(result, null, 2) + '\n', 'utf8');
-        return result;
-    },
-    bulky: (result, target) => {
-        //console.log(JSON.stringify(target, null, 4));
+export default class BulkyVisualizer extends VisualizerBase {
+    static id = 'bulky';            // 一意ID（フォルダ名と一致させると運用しやすい）
+    static name = 'Bulky Visualizer';          // 表示名
+    static version = '0.0.0';
+    static description = "全データをCircleMarkerとして地図上に表示";
+
+    constructor() {
+        super();
+    }
+
+    getFutureCollection(result, target){
+           //console.log(JSON.stringify(target, null, 4));
         const layers = {};
         for (const hex in result) {
             for (const cat in result[hex]) {
@@ -32,5 +37,5 @@ export default {
             }
         }
         return Object.fromEntries(Object.entries(layers).map(([k, v]) => [k, featureCollection(v)]));
-    },
-};
+    }
+}

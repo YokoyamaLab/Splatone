@@ -1,15 +1,18 @@
-// Node core
-import { EventEmitter } from 'node:events';
-import { constants, existsSync } from 'node:fs';
-import { access, readFile } from 'node:fs/promises';
+// -------------------------------
+// Node.js core (ESM)
+// -------------------------------
 import http from 'node:http';
 import os from 'node:os';
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolve, dirname } from 'node:path';
+import { EventEmitter } from 'node:events';
+import path, { resolve, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { existsSync, constants } from 'node:fs';
+import { access, readdir, readFile } from 'node:fs/promises';
 
+// -------------------------------
 // Third-party
+// -------------------------------
 import express from 'express';
-//import Palette from 'iwanthue/palette.js';
 import open from 'open';
 import Piscina from 'piscina';
 import uniqid from 'uniqid';
@@ -19,20 +22,91 @@ import booleanWithin from '@turf/boolean-within';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
-// Local
+// -------------------------------
+// Local modules
+// -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
-import renderer from './lib/renderer.js';
 import paletteGenerator from './lib/paletteGenerator.js';
-//import { render } from 'ejs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const VIZ_BASE = resolve(__dirname, "visualizer");
+const app = express();
+const port = 3000;
+const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
 
-// コマンド例
-// node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vB
-//
 try {
-  const argv = await yargs(hideBin(process.argv))
+
+  // Plugin 読み込み
+  const api = {
+    log: (...a) => console.log('[app]', ...a),
+    emit: (topic, payload) => bus.emit(topic, payload), // 重要
+    getPlugin: (id) => plugins.get(id),
+  };
+
+  const plugins = await loadPlugins({
+    dir: './plugins',
+    api,
+    optionsById: {},
+  });
+  // Visualizer読み込み
+  const all_visualizers = {};  // { [name: string]: class }
+  // クラス判定の小ヘルパ
+  const isClass = (v) =>
+    typeof v === 'function' && /^class\s/.test(Function.prototype.toString.call(v));
+  // 1) node.js を import して、クラスを all_visualizers[:name] に格納（公開はしない）
+  async function loadVisualizerClasses() {
+    const dirs = await readdir(VIZ_BASE, { withFileTypes: true });
+    for (const ent of dirs) {
+      if (!ent.isDirectory()) continue;
+      const name = ent.name;
+      const modPath = resolve(VIZ_BASE, name, 'node.js');
+      try {
+        await access(modPath);
+        const mod = await import(pathToFileURL(modPath).href);
+        // デフォルト or named export どちらでも拾えるように
+        let Cls = null;
+        if (isClass(mod.default)) Cls = mod.default;
+        else {
+          for (const v of Object.values(mod)) {
+            if (isClass(v)) { Cls = v; break; }
+          }
+        }
+        if (!Cls) {
+          console.warn(`[visualizer] ${name}/node.js にクラスが見つかりません。スキップ`);
+          continue;
+        }
+        all_visualizers[name] = Cls;
+        //console.log(`[visualizer] loaded class for "${name}"`);
+      } catch (e) {
+        // node.js が無ければスキップ
+        console.log(e)
+      }
+    }
+  }
+  await loadVisualizerClasses();
+  // --- 2) node.js への直接アクセスを 404（保険）
+  app.use('/visualizer', (req, res, next) => {
+    if (/\/node\.js(?:$|\?)/.test(req.path)) return res.sendStatus(404);
+    next();
+  });
+  // --- 3) web.js のみ直リンクで配信（ホワイトリスト式）
+  app.get('/visualizer/:name/web.js', async (req, res) => {
+    const file = resolve(VIZ_BASE, req.params.name, 'web.js');
+    try { await access(file); res.sendFile(file); }
+    catch (e) { console.log(e); res.sendStatus(404); }
+  });
+  // --- 4) 追加アセットは /public/ 以下だけ静的配信（必要なものだけ公開）
+  app.use('/visualizer/:name/public', (req, res, next) => {
+    // :name を取り出して、そのフォルダの /public だけ公開する
+    const name = req.params?.name || (req.url.split('/')[1] || '');
+    req.url = req.originalUrl.replace(`/visualizer/${name}/public`, '') || '/';
+    express.static(resolve(VIZ_BASE, name, 'public'))(req, res, next);
+  });
+  // コマンド例
+  // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
+  //
+  let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
     .option('plugin', {
@@ -49,20 +123,6 @@ try {
       describe: 'プラグインオプション',
       type: 'string'
     })
-    .option('vis-splatone', {
-      group: 'Visualization',
-      alias: 'vS',
-      type: 'boolean',
-      default: false,
-      description: 'Splatone Heatmapで表示(未対応)'
-    })
-    .option('vis-bulky', {
-      group: 'Visualization',
-      alias: 'vB',
-      type: 'boolean',
-      default: false,
-      description: 'ポイントマーカーで全表示'
-    })
     .option('keywords', {
       group: 'Basic Options',
       alias: 'k',
@@ -76,14 +136,37 @@ try {
         try { return JSON.parse(v); }
         catch (e) { throw new Error(`--${name}: JSON エラー: ${e.message}`); }
       })()
+    });
+  Object.keys(all_visualizers).forEach((vis) => {
+    yargv = yargv.option('vis-' + vis, {
+      group: 'Visualization',
+      type: 'boolean',
+      default: false,
+      description: all_visualizers[vis].description
     })
-    .parseAsync();
+  });
+  yargv = yargv.check((argv, options) => {
+    if (Object.keys(all_visualizers).filter(v => argv["vis-" + v]).length == 0) {
+      throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
+    }
+    return true;
+  });
+  const argv = await yargv.parseAsync();
 
-  const visualizer_all = ["splatone", "bulky"];
-  const visualizers = visualizer_all.filter(v => argv[`vis-${v}`]);
-  console.log("Visualizer layers:", visualizers.join(", ") || "(none)");
-  const plugin_options = argv.options;
-  console.table([["Visualizer", visualizers], ["Plugin", argv.plugin]]);
+  const visualizers = {};
+  for (const vis of Object.keys(all_visualizers).filter(v => argv[`vis-${v}`])) {
+    visualizers[vis] = new all_visualizers[vis]();
+  }
+
+  const plugin_options = argv.options?.[argv.plugin] ?? {}
+  try {
+    plugin_options.API_KEY = await loadAPIKey("flickr") ?? plugin_options.API_KEY;
+  } catch (e) {
+    console.error("Error loading API key:", e.message);
+    //Nothing to do
+  }
+  await plugins.call(argv.plugin, 'init', plugin_options);
+  console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
 
   /* API Key読み込み */
   async function loadAPIKey(plugin = 'flickr') {
@@ -110,16 +193,8 @@ try {
     }
     return key;
   }
-  try {
-    plugin_options["flickr"] ??= {};
-    plugin_options["flickr"].API_KEY = await loadAPIKey("flickr");
-  } catch (e) {
-    console.error("Error loading API key:", e.message);
-    //Nothing to do
-  }
-  const app = express();
-  const port = 3000;
-  const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
+
+
   const crawlers = {};
   const targets = {};
   // 初期中心（凱旋門）
@@ -149,19 +224,8 @@ try {
     return k1 < k2 ? k1 : k2;
   }
 
+
   function defaultMaxUploadTime(date = new Date()) {
-    /*
-    const p = n => String(n).padStart(2, '0');
-    return [
-      date.getFullYear(),
-      p(date.getMonth() + 1),
-      p(date.getDate())
-    ].join('-') + ' ' + [
-      p(date.getHours()),
-      p(date.getMinutes()),
-      p(date.getSeconds())
-    ].join(':');
-    */
     return Math.floor(date / 1000) - 360;
   }
 
@@ -218,8 +282,7 @@ try {
       //console.log("disconnected:", socket.id);
     });
 
-    //console.log("Welcome:", socket.id, "sessionId:", sessionId);
-    socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now() });
+    socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now(), visualizers: Object.keys(visualizers) });
     //クローリング開始
     socket.on("crawling", async (req) => {
       try {
@@ -227,6 +290,7 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
+
         await plugins.call('flickr', 'crawl', {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
@@ -312,7 +376,7 @@ try {
           f.properties = { hexId: i + 1, triIds: [] };
         });
         let hexFC = featureCollection(fc);
-        console.log(JSON.stringify(hexFC, null, 4));
+        //console.log(JSON.stringify(hexFC, null, 4));
 
         // 三角形生成（扇形分割）＋ エッジ索引作成
         const triFeatures = [];
@@ -390,19 +454,6 @@ try {
     });
   });
 
-  const api = {
-    log: (...a) => console.log('[app]', ...a),
-    emit: (topic, payload) => bus.emit(topic, payload), // 重要
-    getPlugin: (id) => plugins.get(id),
-  };
-
-  const plugins = await loadPlugins({
-    dir: './plugins',
-    api,
-    optionsById: plugin_options,
-  });
-  //console.log('loaded:', plugins.list());
-
   const resolvedWorkerFilename = {};
   function resolveWorkerFilename(taskName) {
     if (!resolvedWorkerFilename[taskName]) {
@@ -463,7 +514,6 @@ try {
     idleTimeout: 10_000,
     // 注意：ここで filename は渡さない。run 時に切り替える
   });
-  console.log("Parallel", nParallel);
   await subscribe('splatone:start', async p => {
     //console.log('[splatone:start]', p);
     const rtn = await runTask(p.plugin, p);
@@ -478,12 +528,9 @@ try {
     crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
     console.log(`(CRAWL) ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
-    //console.log(Array.from( duplicates));
     const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
-
     crawlers[p.sessionId][rtn.hexId][rtn.category].items
       = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, photos);
-    //console.log(crawlers[p.sessionId]);
     const { stats, progress, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
     io.to(p.sessionId).emit('progress', { hexId: rtn.hexId, progress });
     if (!rtn.final) {
@@ -496,16 +543,18 @@ try {
       api.emit('splatone:finish', p);
     }
   });
+
   await subscribe('splatone:finish', async p => {
     const result = crawlers[p.sessionId];
     const target = targets[p.sessionId];
     console.log('[splatone:finish]');
-    const geoJson = {};
-    for (const vis of visualizers) {
-      const layer = renderer[vis](result, target);
-      geoJson[vis] = layer;
-    }
-    io.to(p.sessionId).emit('result', { geoJson, palette: target["splatonePalette"], visualizers, plugin: argv.plugin });
+    const geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
+    io.to(p.sessionId).emit('result', {
+      geoJson,
+      palette: target["splatonePalette"],
+      visualizers: Object.keys(visualizers),
+      plugin: argv.plugin
+    });
   });
 
   server.listen(port, async () => {
@@ -515,6 +564,6 @@ try {
 
   process.on('SIGINT', async () => { await plugins.stopAll(); process.exit(0); });
 } catch (e) {
-  console.error(e.message);
+  console.error(e);
 
 }

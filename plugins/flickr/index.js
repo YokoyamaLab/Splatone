@@ -5,20 +5,14 @@ import { bbox, polygon, centroid, booleanPointInPolygon, featureCollection } fro
 export default class FlickrPlugin extends PluginBase {
     static id = 'flickr';               // 必須
     static name = 'Flickr Plugin';      // 任意
+    static description = 'Flickrからジオタグ付きデータを収集する。';
     static version = '1.0.0';
-
-    async init() {
-        //this.api.log(`[${this.constructor.id}] init`);
-    }
 
     async stop() {
         //this.api.log(`[${this.constructor.id}] stop`);
     }
 
     // 任意の公開メソッド
-    async save(){
-
-    }
     async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, sessionId }) {
         if (!this.started) {
             this.start();
