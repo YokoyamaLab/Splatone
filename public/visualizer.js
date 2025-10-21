@@ -12,32 +12,6 @@ function addGeoJSONLayer(map, geojson, options = {}) {
     return geojsonLayer;
 }
 
-function addBulkyPointMarkerLayer(map, geojson, options = {}) {
-    const layers = {};
-    for (const cat in geojson) {
-        const layer = addGeoJSONLayer(map, geojson[cat], {
-            pointToLayer: (feature, latlng) => {
-                return L.circleMarker(latlng, {
-                    radius: feature.properties.radius,
-                    stroke: feature.properties.stroke,
-                    color: feature.properties.color,
-                    weight: feature.properties.weight,
-                    opacity: feature.properties.opacity,
-                    fill: feature.properties.fill,
-                    fillColor: feature.properties.fillColor,
-                    fillOpacity: feature.properties.fillOpacity
-                })
-            },
-            onEachFeature: (feature, layer) => {
-                const t = `<img src="${feature.properties.url_s}">` || "NO Image!";
-                layer.bindTooltip(t ?? '', { direction: 'top', opacity: 0.9 });
-            }
-
-        });
-        layers[cat] = layer;
-    }
-    return layers;
-}
 /*
 使用例:
 const layer = addGeoJSONLayer(map, myGeoJSON, {
@@ -45,3 +19,31 @@ const layer = addGeoJSONLayer(map, myGeoJSON, {
     popupProperty: f => `name: ${f.properties.name}`,
 });
 */
+
+function loadAsset(url) {
+    const clean = String(url).split('#')[0].split('?')[0].toLowerCase();
+
+    if (clean.endsWith('.css')) {
+        return new Promise((resolve, reject) => {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = url;
+            link.onload = () => resolve(link);
+            link.onerror = () => reject(new Error(`CSS load failed: ${url}`));
+            document.head.appendChild(link);
+        });
+    }
+
+    if (clean.endsWith('.js') || clean.endsWith('.mjs')) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.type = 'module';
+            s.src = url;
+            s.onload = () => resolve(s);
+            s.onerror = () => reject(new Error(`JS load failed: ${url}`));
+            document.head.appendChild(s);
+        });
+    }
+
+    return Promise.reject(new Error(`Unsupported extension: ${url}`));
+}
