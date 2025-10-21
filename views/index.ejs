@@ -103,7 +103,7 @@
   <!-- Visualize.js -->
   <script src="visualizer.js"></script>
   <!-- Main JS -->
-  <script>
+  <script type="module">
     const lat = <%= lat %>;
     const lon = <%= lon %>;
     const socket = io({
@@ -143,9 +143,14 @@
       //console.log('Disconnected from server');
     });
 
-    socket.on("welcome", (res) => {
+    let sessionId=null;
+    let visualizers = {};
+    socket.on("welcome",async (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
+      console.log("VIS",res.visualizers);
       sessionId = res.sessionId;
+      visualizers = Object.fromEntries(await Promise.all(res.visualizers.map(async vis => { const m = await import(new URL(`./visualizer/${vis}/web.js`, import.meta.url).href); return [vis, m.entry ?? m.default ?? m[vis]]; })));
+      console.log(visualizers);
     });
 
     function generateLegend(legends) {
@@ -229,13 +234,31 @@
       highlightHexById(res.hexId, 1 - res.progress[res.hexId].percent, "#263238");
     });
 
+    function isPlainObject(a) {
+      if (a === null || typeof a !== 'object') return false;  // 原始値/関数など除外
+      const proto = Object.getPrototypeOf(a);
+      return proto === Object.prototype || proto === null;     // {} / Object.create(null)
+    }
     let latestResult = {};
-    socket.on('result', (res) => {
+    const overlays = {};
+    socket.on('result',async (res) => {
       latestResult["_"]["visualizers"] = res.visualizers;
       latestResult["_"]["plugin"] = res.plugin;
       clearHexHighlight();
       latestResult = {...latestResult, ...res.geoJson};
-      const overlays = addBulkyPointMarkerLayer(map, res.geoJson.bulky);
+      console.log("result");
+      console.log("geoJSON",res.geoJson);
+      for(const vis in visualizers){
+        const layers = await visualizers[vis](map, res.geoJson[vis]);
+        if(layers.hasOwnProperty("type") && layers["type"]=="FeatureCollection"){
+          //レイヤ一つ
+          overlays[`[${vis}]`] =  layers;
+        }else{
+          for(const name in layers){
+            overlays[`[${vis}] ${name}`] =  layers[name];
+          }
+        }
+      }
       //進捗バーを消して凡例を表示
       if (myProgress) map.removeControl(myProgress);
       myLegend = new BottomLeftLegend().addTo(map);
@@ -251,6 +274,7 @@
         });
       }
       ul.innerHTML = generateLegend(palette);
+      console.log(overlays);
       L.control.layers([baseLayer], {
         ...overlays,
         "Hex Grid": hexLayer,
