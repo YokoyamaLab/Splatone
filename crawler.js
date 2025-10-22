@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-  // -------------------------------
+// -------------------------------
 // Node.js core (ESM)
 // -------------------------------
 import http from 'node:http';
@@ -19,8 +19,7 @@ import open from 'open';
 import Piscina from 'piscina';
 import uniqid from 'uniqid';
 import { Server as IOServer } from 'socket.io';
-import { centroid, featureCollection, hexGrid, polygon } from '@turf/turf';
-import booleanWithin from '@turf/boolean-within';
+import { centroid, featureCollection, hexGrid, polygon, buffer, bboxPolygon, bbox as turfbbox, booleanIntersects } from '@turf/turf';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
@@ -372,9 +371,18 @@ try {
           }
           return [k, colors];
         }));
-        // HexGrid 生成
 
-        const fc = hexGrid(bboxArray, sizeNum, { units }).features.filter((f => booleanWithin(f, drawn)));
+        // HexGrid 生成
+        function expandBbox(b, d, units = 'kilometers') {
+          //bbox拡大（指定した範囲を内包させるため）
+          if (!d) return b;
+          const poly = bboxPolygon(b);
+          const buff = buffer(poly, Math.sqrt(3) * d, { units }); // 周囲に d だけバッファ
+          return turfbbox(buff); // バッファ後の外接 bbox を返す
+        }
+        const exbbox = expandBbox(bboxArray, sizeNum, units);
+        const fc = hexGrid(exbbox, sizeNum, { units }).features.filter((f => booleanIntersects(f, drawn)));
+
         fc.forEach((f, i) => {
           f.properties = { hexId: i + 1, triIds: [] };
         });
