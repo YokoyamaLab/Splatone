@@ -1,4 +1,6 @@
-// -------------------------------
+#!/usr/bin/env node
+
+  // -------------------------------
 // Node.js core (ESM)
 // -------------------------------
 import http from 'node:http';
@@ -105,13 +107,14 @@ try {
   });
   // コマンド例
   // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
-  //
+  // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
     .option('plugin', {
       group: 'Basic Options',
       alias: 'p',
+      choices: plugins.list(),
       demandOption: true,
       describe: '実行するプラグイン',
       type: 'string'
@@ -139,7 +142,7 @@ try {
     });
   Object.keys(all_visualizers).forEach((vis) => {
     yargv = yargv.option('vis-' + vis, {
-      group: 'Visualization',
+      group: 'Visualization (最低一つの指定が必須です)',
       type: 'boolean',
       default: false,
       description: all_visualizers[vis].description
