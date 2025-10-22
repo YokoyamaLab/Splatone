@@ -90,7 +90,7 @@ APIキーは以下の３種類の方法で与える事ができます
 
 ### Bulky: 全ての点を地図上にポイントする
 
-![](assets/screenshot_venice_bulky.png)
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_venice_bulky.png?raw=true)
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
@@ -98,7 +98,7 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 ```
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
-![](assets/screenshot_venice_marker-cluster.png)
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_venice_marker-cluster.png?raw=true)
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
@@ -127,7 +127,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 ```shell
 $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "sea,ocean|mountain,mount" --vis-bulky
 ```
-![](assets/screenshot_sea-mountain_bulky.png)
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
 
 ### カテゴリ名の指定
 
@@ -143,11 +143,11 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 
 * 結果の地図を画像(PNG形式)としてダウンロードするには、画面右下のアイコンをクリックしてください。
 
-![](assets/icon_image_download.png)
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/icon_image_download.png?raw=true)
 
 ### データのダウンロード
 
 * クロール結果をデータとしてダウンロードしたい場合は凡例の下にあるエクスポートボタンをクリックしてください。
 
-![](assets/icon_data_export.png)
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/icon_data_export.png?raw=true)
 
