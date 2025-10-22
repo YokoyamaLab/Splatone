@@ -19,7 +19,7 @@ export default async function main(map, geojson, options = { palette: {} }) {
 
     const categoryColors = new Map();
     for (const cat in options.palette) {
-        categoryColors.set(cat, options.palette[cat].color);
+        categoryColors.set(cat, options.palette[cat]);
     }
 
     const clusterByCategory = new Map(); // category -> L.MarkerClusterGroup
@@ -27,7 +27,8 @@ export default async function main(map, geojson, options = { palette: {} }) {
     function getOrCreateCluster(category) {
         if (clusterByCategory.has(category)) return clusterByCategory.get(category);
 
-        const color = categoryColors.get(category);
+        const { color, darken, brighten } = categoryColors.get(category);
+
         // カスタム iconCreateFunction（色違いの泡）
         const group = L.markerClusterGroup({
             chunkedLoading: true,
@@ -39,9 +40,13 @@ export default async function main(map, geojson, options = { palette: {} }) {
                 const count = cluster.getChildCount();
                 const size = count >= 100 ? 48 : (count >= 10 ? 40 : 32);
                 const html = `<div style="
-            width:${size}px;height:${size}px;border-radius:50%;
-            background:${color}; color:#fff; display:flex;
-            align-items:center; justify-content:center; font-weight:700;">
+            width:${size}px;height:${size}px;border-radius:50%;border:3px double ${darken};
+            background:${color}aa; color:${brighten}; display:flex;
+            text-shadow: 1px 1px 0px ${darken}, -1px -1px 0px ${darken},
+                        -1px 1px 0px ${darken},  1px -1px 0px ${darken},
+                         0px 1px 0px ${darken},  0px -1px 0px ${darken},
+                        -1px 0px 0px ${darken},  1px  0px 0px ${darken};
+            align-items:center; justify-content:center; font-weight:bold;">
             ${count}</div>`;
                 return L.divIcon({
                     html, className: 'marker-cluster cluster-cat', iconSize: L.point(size, size)
@@ -62,13 +67,20 @@ export default async function main(map, geojson, options = { palette: {} }) {
 
         // マーカーを作るユーティリティ
         const addMarker = (lng, lat) => {
-            const m = L.marker([lat, lng], {
-                // 見た目を点寄りにしたい場合は小さな divIcon にしてもOK
-                // icon: L.divIcon({className:'', html:'<div style="width:8px;height:8px;border-radius:50%;background:#444"></div>', iconSize:[8,8]})
-            });
             const props = feature.properties ?? {};
             const name = props.name ?? '(no name)';
             const cat = props.category ?? 'uncategorized';
+            const { color, darken, brighten } = categoryColors.get(cat);
+            const m = L.marker([lat, lng], {
+                // 見た目を点寄りにしたい場合は小さな divIcon にしてもOK
+                icon: L.divIcon({
+                    className: '', html: `<div style="
+                    width:8px;height:8px;border-radius:50%;
+                    background:${color}aa;
+                    border:1px solid ${darken};"
+                ></div>`, iconSize: [8, 8]
+                })
+            });
             m.bindPopup(`<b>${name}</b><br/>category: ${cat}<br/>${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`);
             markers.push(m);
         };
@@ -102,7 +114,7 @@ export default async function main(map, geojson, options = { palette: {} }) {
         const bounds = L.latLngBounds();
 
         for (const f of featureCollection.features ?? []) {
-            const category = f.properties.category;            
+            const category = f.properties.category;
             const cluster = getOrCreateCluster(category);
             const markers = featureToMarkers(f);
             if (markers.length) {
