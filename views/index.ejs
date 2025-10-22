@@ -11,7 +11,6 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
   <!-- Leaflet.draw CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin="anonymous" />
-
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -97,6 +96,9 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
   <!-- Leaflet.draw JS -->
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin="anonymous"></script>
+  <!-- Map to Image -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-easyprint@2.1.9/dist/bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/leaflet-easyprint@2.1.9/libs/leaflet.min.css" rel="stylesheet">
 
   <!-- Socket.IO JS -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -343,6 +345,15 @@
     });
     map.addControl(drawControl);
 
+    //印刷
+    L.easyPrint({
+      title: 'マップの画像化とダウンロード',
+      position: 'bottomright',
+      sizeModes: [ 'A4Landscape'],
+      exportOnly: true,
+      filename: 'splatone_export'
+    }).addTo(map);
+    
     // レイヤ参照
     let hexLayer = null;
     let triLayer = null;
