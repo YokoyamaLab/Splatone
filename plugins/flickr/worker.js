@@ -60,7 +60,7 @@ export default async function ({
             : null;
     if (Object.keys(authors).length == 1) {
         const window = res.photos.photo[res.photos.photo.length - 1].dateupload - res.photos.photo[0].dateupload;
-        console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within {$window}. the crawler will skip the next 24 hours.`);
+        console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next 24 hours.`);
         next_max_upload_date -= 60 * 60 * 24;
     }
     return {
