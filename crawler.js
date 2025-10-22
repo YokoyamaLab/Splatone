@@ -172,18 +172,27 @@ try {
 
   /* API Key読み込み */
   async function loadAPIKey(plugin = 'flickr') {
+    //ファイルチェック→環境変数チェック
+
     const filePath = ".API_KEY." + plugin;
     const file = resolve(filePath);
     // 存在＆読取権限チェック
+    let key = null;
     try {
       await access(file, constants.F_OK | constants.R_OK);
+      // 読み込み & トリム
+      const raw = await readFile(file, 'utf8');
+      console.log(`[API KEY (${plugin}})] Read from FILE`);
+      key = raw.trim();
     } catch (err) {
-      const code = /** @type {{ code?: string }} */(err).code || 'UNKNOWN';
-      throw new Error(`APIキーのファイルにアクセスできません: ${file} (code=${code})`);
+      if (Object.prototype.hasOwnProperty.call(process.env, "API_KEY_" + plugin)) {
+        console.log(`[API KEY (${plugin}})] Read from ENV`);
+        key = process.env["API_KEY_" + plugin] ?? null;
+      } else {
+        const code = /** @type {{ code?: string }} */(err).code || 'UNKNOWN';
+        throw new Error(`APIキーのファイルもしくは環境変数にアクセスできません: ${file} (code=${code})`);
+      }
     }
-    // 読み込み & トリム
-    const raw = await readFile(file, 'utf8');
-    const key = raw.trim();
     if (!key) {
       throw new Error(`APIキーのファイルが空です: ${file}`);
     }

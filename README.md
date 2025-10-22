@@ -46,7 +46,7 @@ Visualization (最低一つの指定が必須です)
 ## クローリングの実行
 
 - 以下のサンプルコマンドを参考に実行してください。
-  - FlickrのAPIキーは自身のに置き換える事
+  - **FlickrのAPIキーは自身のに置き換える事**
 - ブラウザが立ち上がるので地図上でポリゴンあるいは矩形で領域選択し、実行ボタンを押すとクロールが開始されます。
   - 指定した範囲を内包するHexGrid(六角形グリッド)が生成され、その内側のみが収集されます。
 - 結果が表示された後、結果をGeoJSON形式でダウンロードできます。
@@ -64,6 +64,27 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 - ベネチア等の水路のある町でやると面白いです
 
 # 詳細説明
+
+## APIキーの与え方
+
+APIキーは以下の３種類の方法で与える事ができます
+- ```--option```に含める
+  - 上記コマンド例の方法
+  - **flickr**の場合は``` -o '{"plugin":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'```になります。
+  - [注意] コマンドを他の人と共有する時、APIキーをそのまま渡す事は危険です。
+  - **flickr**の場合は``` -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'```になります。
+- 環境変数で渡す
+  - ```API_KEY_plugin```という環境変数に格納する
+  - コマンドに毎回含めなくて良くなる。
+  - **flickr**の場合は```.API_KEY_flickr```になります。
+    - ```plugin```はプラグイン名(flickr等)に置き換えてください。
+  - 一時的な環境変数を定義する事も可能です。(bash等)
+    - ```API_KEY_flickr="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" node crawler.js -p flickr -k "sea,ocean|mountain,mount" --vis-bulky```
+- ファイルで渡す(npxでは不可)
+  - ルートディレクトリに```.API_KEY.plugin```というファイルを作成し保存
+    - ```plugin```はプラグイン名(flickr等)に置き換えてください。
+  - **flickr**の場合は```.API_KEY.flickr```になります。
+  - optionや環境変数で与えるよりも優先されます。
 
 ## Visualizer (可視化ツール)
 
