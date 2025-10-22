@@ -122,13 +122,6 @@ seaだけでは集められるポストが限定されるので、同様の意�
 -k "sea,ocean|mountain,mount"
 ```
 
-### 実行例 (海岸線と山岳の分布)
-
-```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "sea,ocean|mountain,mount" --vis-bulky
-```
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
-
 ### カテゴリ名の指定
 
 複数の類語キーワードを指定した場合、それらをまとめるカテゴリ名を付ける事ができます。たとえはsea,oceanに『海域』、mountain,mountに『山岳』とカテゴリ名をつけるには以下のように指定します。なお、指定は必須ではありません。指定しない場合はそれぞれ１番目のキーワード(seaとmountain)がカテゴリ名になります。
@@ -136,6 +129,14 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 ```
 -k "海域=sea,ocean|山岳=mountain,mount"
 ```
+
+### 実行例 (海岸線と山岳の分布)
+
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "sea,ocean|mountain,mount" --vis-bulky
+```
+![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
+
 
 ## ダウンロード
 
