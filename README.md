@@ -2,19 +2,23 @@
 
 # 概要
 
-SNSのジオタグ付きポストを収集するツールです。現在は以下のSNSに対応しています。
+SNSのジオタグ付きポストをキーワードに基づいて収集するツールです。キーワードは複数指定し、それぞれのキーワードの出現分布を地図上にマップします。現在は以下のSNSに対応しています。
 
 - Flickr
 
-集めたデータは保存できる他、地図上で可視化する事が出来ます。以下の可視化に対応しています。
+集めたデータはキーワード毎に色分けされ地図上で可視化されます。以下の可視化手法に対応しています。
 
 - Bulky: クロールした全てのジオタグを小さな点で描画する
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
+
+## 既知のバグ
+
+- JSON.stringify(json)で変換できる大きさに制限があり、数十万件等の大きな結果を生み出すクエリは、クロール後、結果のブラウザへの転送で失敗します。
   
 # 使い方
 
-- [Node.js](https://nodejs.org/ja/download)をインストール後、NPXで実行します。
-
+- [Node.js](https://nodejs.org/ja/download)をインストール後、npxで実行します。
+  - npxはnpm上のモジュールをコマンド一つでインストールと実行を行う事ができるコマンドです。
 
 ## Helpの表示
 
@@ -48,13 +52,81 @@ Visualization (最低一つの指定が必須です)
 - 結果が表示された後、結果をGeoJSON形式でダウンロードできます。
 
 ### 事例１)　商業施設・飲食施設・文化施設・公園の分類
-```
-node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
 ```
 - オプションの **--vis-bulky** を **--vis-marker-cluster** に変更する事でマーカークラスターで可視化できます。
 
 ### 事例２）水路・陸路・ランドマーク等の分類
-```
-node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
 ```
 - ベネチア等の水路のある町でやると面白いです
+
+# 詳細説明
+
+## Visualizer (可視化ツール)
+
+### Bulky: 全ての点を地図上にポイントする
+
+![](assets/screenshot_venice_bulky.png)
+
+* クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky
+```
+
+### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
+![](assets/screenshot_venice_marker-cluster.png)
+
+* クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-marker-cluster
+```
+## キーワード指定方法
+
+### 比較キーワードの指定
+
+複数のキーワードでジオタグ付きポストを集め分布を比較します。比較キーワードは「|」区切りで指定します。例えばseaとmountainの分布を調べたい場合は以下のようにします。この例では、seaとタグ付けられたポストとmountainとタグ付けられたポストが色分けされて分布を表示します。
+
+```
+-k "sea|mountain"
+```
+
+### 類語キーワードの指定
+
+seaだけでは集められるポストが限定されるので、同様の意味のキーワードも指定してor検索したいと考えるかもしれません。その場合は「,」で区切ってキーワードを並べる事ができます。これを類語キーワードと呼びます。例えばseaとocean、mountainとmountでor検索したい場合は以下のように指定します。
+
+```
+-k "sea,ocean|mountain,mount"
+```
+
+### 実行例 (海岸線と山岳の分布)
+
+```shell
+$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "sea,ocean|mountain,mount" --vis-bulky
+```
+![](assets/screenshot_sea-mountain_bulky.png)
+
+### カテゴリ名の指定
+
+複数の類語キーワードを指定した場合、それらをまとめるカテゴリ名を付ける事ができます。たとえはsea,oceanに『海域』、mountain,mountに『山岳』とカテゴリ名をつけるには以下のように指定します。なお、指定は必須ではありません。指定しない場合はそれぞれ１番目のキーワード(seaとmountain)がカテゴリ名になります。
+
+```
+-k "海域=sea,ocean|山岳=mountain,mount"
+```
+
+## ダウンロード
+
+### 画像のダウンロード
+
+* 結果の地図を画像(PNG形式)としてダウンロードするには、画面右下のアイコンをクリックしてください。
+
+![](assets/icon_image_download.png)
+
+### データのダウンロード
+
+* クロール結果をデータとしてダウンロードしたい場合は凡例の下にあるエクスポートボタンをクリックしてください。
+
+![](assets/icon_data_export.png)
+
