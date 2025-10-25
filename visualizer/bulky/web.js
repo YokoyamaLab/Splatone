@@ -1,9 +1,11 @@
 let booted = false;
 export default async function main(map, geojson, options = {}) {
+    console.log("main");
     if (booted) return;
     booted = true;
     const layers = {};
     for (const cat in geojson) {
+        console.log(cat);
         const layer = addGeoJSONLayer(map, geojson[cat], {
             pointToLayer: (feature, latlng) => {
                 return L.circleMarker(latlng, {

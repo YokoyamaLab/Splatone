@@ -8,7 +8,7 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import path, { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { existsSync, constants } from 'node:fs';
+import { existsSync, writeFileSync, constants } from 'node:fs';
 import { access, readdir, readFile } from 'node:fs/promises';
 
 // -------------------------------
@@ -28,6 +28,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
+import { dfsObject } from './lib/splatone.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -107,6 +108,7 @@ try {
   // コマンド例
   // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
   // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
+  // node crawler.js -p flickr -k "水辺=sea,ocean,beach|山岳=mountain,mount,hill" --vis-bulky --chopped
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
@@ -131,6 +133,22 @@ try {
       type: 'string',
       default: 'nature,tree,flower|building,house|water,sea,river,pond',
       description: '検索キーワード(|区切り)'
+    }).option('chopped', {
+      group: 'Basic Options',
+      alias: 'c',
+      type: 'boolean',
+      default: false,
+      description: '大きなデータを細分化して送信する'
+      //    }).option('debug-save', {
+      //      group: 'Debug',
+      //      type: 'boolean',
+      //      default: false,
+      //      description: 'サーバ側にクロールデータを保存'
+    }).option('debug-verbose', {
+      group: 'Debug',
+      type: 'boolean',
+      default: false,
+      description: 'デバッグ情報出力'
     })
     .version()
     .coerce({
@@ -154,7 +172,6 @@ try {
     return true;
   });
   const argv = await yargv.parseAsync();
-
   const visualizers = {};
   for (const vis of Object.keys(all_visualizers).filter(v => argv[`vis-${v}`])) {
     visualizers[vis] = new all_visualizers[vis]();
@@ -164,11 +181,15 @@ try {
   try {
     plugin_options.API_KEY = await loadAPIKey("flickr") ?? plugin_options.API_KEY;
   } catch (e) {
-    console.error("Error loading API key:", e.message);
+    if (!plugin_options.API_KEY) {
+      console.error("Error loading API key:", e.message);
+    }
     //Nothing to do
   }
   await plugins.call(argv.plugin, 'init', plugin_options);
-  console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
+  if (argv.debugVerbose) {
+    console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
+  }
 
   /* API Key読み込み */
   async function loadAPIKey(plugin = 'flickr') {
@@ -182,11 +203,11 @@ try {
       await access(file, constants.F_OK | constants.R_OK);
       // 読み込み & トリム
       const raw = await readFile(file, 'utf8');
-      console.log(`[API KEY (${plugin}})] Read from FILE`);
+      //console.log(`[API KEY (${plugin}})] Read from FILE`);
       key = raw.trim();
     } catch (err) {
       if (Object.prototype.hasOwnProperty.call(process.env, "API_KEY_" + plugin)) {
-        console.log(`[API KEY (${plugin}})] Read from ENV`);
+        //console.log(`[API KEY (${plugin}})] Read from ENV`);
         key = process.env["API_KEY_" + plugin] ?? null;
       } else {
         const code = /** @type {{ code?: string }} */(err).code || 'UNKNOWN';
@@ -325,7 +346,10 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
-        const { bbox, drawn, cellSize = '0.5', units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
+        const { bbox, drawn, cellSize = 0, units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
+        if (cellSize == 0) {
+          //セルサイズ自動決定()
+        }
         const fallbackBbox = [139.55, 35.53, 139.92, 35.80];
         let bboxArray = fallbackBbox;
 
@@ -527,7 +551,7 @@ try {
     return piscina.run(data, { filename });
   }
 
-  const nParallel = Math.max(1, Math.min(12, os.cpus().length))
+  const nParallel = Math.max(1, Math.min(6, os.cpus().length))
   const piscina = new Piscina({
     minThreads: 1,
     maxThreads: nParallel,
@@ -547,7 +571,9 @@ try {
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled ??= 0;
     crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
-    console.log(`(CRAWL) ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
+    if (argv.debugVerbose) {
+      console.log(`(CRAWL) ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
+    }
     const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
     crawlers[p.sessionId][rtn.hexId][rtn.category].items
       = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, photos);
@@ -559,22 +585,97 @@ try {
       //console.log("next max_upload_date:", p.max_upload_date);
       api.emit('splatone:start', p);
     } else if (finish) {
-      console.table(stats);
+      if (argv.debugVerbose) {
+        console.table(stats);
+      }
       api.emit('splatone:finish', p);
     }
   });
 
   await subscribe('splatone:finish', async p => {
+    const resultId = uniqid();
     const result = crawlers[p.sessionId];
     const target = targets[p.sessionId];
+
+    let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
+
     console.log('[splatone:finish]');
-    const geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
-    io.to(p.sessionId).emit('result', {
-      geoJson,
-      palette: target["splatonePalette"],
-      visualizers: Object.keys(visualizers),
-      plugin: argv.plugin
-    });
+    try {
+      if (argv.chopped) {
+        throw new RangeError("Invalid string length");
+      }
+      await io.to(p.sessionId).timeout(5000).emitWithAck('result', {
+        resultId,
+        geoJson,
+        palette: target["splatonePalette"],
+        visualizers: Object.keys(visualizers),
+        plugin: argv.plugin
+      });
+    } catch (e) {
+      if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
+        const msg = (argv.chopped ? "ユーザの指定により" : "結果サイズが巨大なので") + "断片化モードでクライアントに送ります";
+        if (argv.debugVerbose) {
+          console.warn("[WARN] " + msg);
+        }
+        io.to(p.sessionId).timeout(5000).emit('toast', {
+          text: msg,
+          class: "warning"
+        });
+        //サイズ集計
+        const total_features = ((s = 0, st = [geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
+        let current_features = 0
+        await dfsObject(geoJson, async ({ path, value, kind, type }) => {
+          if (path.length !== 0) {
+            if (kind === "primitive" || kind === "null") {
+              //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
+              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
+                resultId,
+                path,
+                kind,
+                type,
+                value
+              });
+              //console.log("\tACK", ackrtn);
+            } else if (kind === "object") {
+              //console.log(path.join("."), "=>", `(${kind}:${type})`);
+              if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
+                current_features++;
+              }
+              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
+                resultId,
+                path,
+                kind,
+                type,
+                progress: { current: current_features, total: total_features }
+              });
+              //console.log("\tACK", ackrtn);
+            } else if (kind === "array") {
+              //console.log(path.join("."), "=>", `(${kind}:${type})`);              
+              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
+                resultId,
+                path,
+                kind,
+                type
+              });
+              //console.log("\tACK", ackrtn);
+            }
+          } else {
+            //console.log("SKIP---------------------");
+          }
+        });
+        //console.log("finish chunks");
+        io.to(p.sessionId).timeout(10000).emitWithAck('result', {
+          resultId,
+          geoJson: null, /*geoJsonは送らない*/
+          palette: target["splatonePalette"],
+          visualizers: Object.keys(visualizers),
+          plugin: argv.plugin
+        });
+        console.log("[Done]");
+      } else {
+        throw e; // 他の例外はそのまま
+      }
+    }
   });
 
   server.listen(port, async () => {

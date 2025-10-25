@@ -316,3 +316,13 @@ text-shadow: 0 1px 1px #0006;
     display: flex;
     justify-content: center;  /* 横中央 */
   }
+
+.toast-info {
+    background: linear-gradient(to right, #43cea2, #185a9d)!important;
+}
+.toast-warning{
+    background: linear-gradient(to bottom, #c21500, #ffc500)!important;
+}
+.toast-error {
+     background: linear-gradient(to bottom, #333333, #dd1818)!important;
+}

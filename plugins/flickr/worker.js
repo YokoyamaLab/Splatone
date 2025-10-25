@@ -58,10 +58,11 @@ export default async function ({
         = res.photos.photo.length > 0
             ? (res.photos.photo[res.photos.photo.length - 1].dateupload) - (res.photos.photo[res.photos.photo.length - 1].dateupload == res.photos.photo[0].dateupload ? 1 : 0)
             : null;
-    if (Object.keys(authors).length == 1) {
-        const window = res.photos.photo[res.photos.photo.length - 1].dateupload - res.photos.photo[0].dateupload;
-        console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next 24 hours.`);
-        next_max_upload_date -= 60 * 60 * 24;
+    const window = res.photos.photo.length == 0 ? 0 : res.photos.photo[0].dateupload - res.photos.photo[res.photos.photo.length - 1].dateupload;
+    if (Object.keys(authors).length == 1 && window < 60 * 60) {
+        const skip = window < 5 ? 0.1 : 12;
+        console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
+        next_max_upload_date -= 60 * 60 * skip;
     }
     return {
         photos,
