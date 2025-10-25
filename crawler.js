@@ -28,7 +28,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
-import { dfsObject } from './lib/splatone.js';
+import { dfsObject, saveGeoJsonObjectAsStream } from './lib/splatone.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -133,12 +133,19 @@ try {
       type: 'string',
       default: 'nature,tree,flower|building,house|water,sea,river,pond',
       description: '検索キーワード(|区切り)'
+    }).option('filed', {
+      group: 'Basic Options',
+      alias: 'f',
+      type: 'boolean',
+      default: true,
+      description: '大きなデータをファイルとして送受信する'
     }).option('chopped', {
       group: 'Basic Options',
       alias: 'c',
       type: 'boolean',
       default: false,
-      description: '大きなデータを細分化して送信する'
+      deprecate: true,
+      description: '大きなデータを細分化して送受信する'
       //    }).option('debug-save', {
       //      group: 'Debug',
       //      type: 'boolean',
@@ -168,6 +175,10 @@ try {
   yargv = yargv.check((argv, options) => {
     if (Object.keys(all_visualizers).filter(v => argv["vis-" + v]).length == 0) {
       throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
+    }
+    if (argv.filed && argv.chopped) {
+      console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
+      argv.chopped = false;
     }
     return true;
   });
@@ -601,10 +612,10 @@ try {
 
     console.log('[splatone:finish]');
     try {
-      if (argv.chopped) {
+      if (argv.chopped || argv.filed) {
         throw new RangeError("Invalid string length");
       }
-      await io.to(p.sessionId).timeout(5000).emitWithAck('result', {
+      await io.to(p.sessionId).timeout(120000).emitWithAck('result', {
         resultId,
         geoJson,
         palette: target["splatonePalette"],
@@ -613,7 +624,7 @@ try {
       });
     } catch (e) {
       if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
-        const msg = (argv.chopped ? "ユーザの指定により" : "結果サイズが巨大なので") + "断片化モードでクライアントに送ります";
+        const msg = ((argv.chopped || argv.filed) ? "ユーザの指定により" : "結果サイズが巨大なので") + (argv.chopped ? "断片化送信" : "保存ファイル送信") + "モードでクライアントに送ります";
         if (argv.debugVerbose) {
           console.warn("[WARN] " + msg);
         }
@@ -621,50 +632,64 @@ try {
           text: msg,
           class: "warning"
         });
-        //サイズ集計
-        const total_features = ((s = 0, st = [geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
-        let current_features = 0
-        await dfsObject(geoJson, async ({ path, value, kind, type }) => {
-          if (path.length !== 0) {
-            if (kind === "primitive" || kind === "null") {
-              //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
-              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
-                resultId,
-                path,
-                kind,
-                type,
-                value
-              });
-              //console.log("\tACK", ackrtn);
-            } else if (kind === "object") {
-              //console.log(path.join("."), "=>", `(${kind}:${type})`);
-              if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
-                current_features++;
+        if (argv.chopped) {
+          //サイズ集計
+          const total_features = ((s = 0, st = [geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
+          let current_features = 0
+          await dfsObject(geoJson, async ({ path, value, kind, type }) => {
+            if (path.length !== 0) {
+              if (kind === "primitive" || kind === "null") {
+                //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
+                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                  resultId,
+                  path,
+                  kind,
+                  type,
+                  value
+                });
+                //console.log("\tACK", ackrtn);
+              } else if (kind === "object") {
+                //console.log(path.join("."), "=>", `(${kind}:${type})`);
+                if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
+                  current_features++;
+                }
+                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                  resultId,
+                  path,
+                  kind,
+                  type,
+                  progress: { current: current_features, total: total_features }
+                });
+                //console.log("\tACK", ackrtn);
+              } else if (kind === "array") {
+                //console.log(path.join("."), "=>", `(${kind}:${type})`);              
+                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                  resultId,
+                  path,
+                  kind,
+                  type
+                });
+                //console.log("\tACK", ackrtn);
               }
-              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
-                resultId,
-                path,
-                kind,
-                type,
-                progress: { current: current_features, total: total_features }
-              });
-              //console.log("\tACK", ackrtn);
-            } else if (kind === "array") {
-              //console.log(path.join("."), "=>", `(${kind}:${type})`);              
-              const ackrtn = await io.to(p.sessionId).timeout(5000).emitWithAck('result-chunk', {
-                resultId,
-                path,
-                kind,
-                type
-              });
-              //console.log("\tACK", ackrtn);
+            } else {
+              //console.log("SKIP---------------------");
             }
-          } else {
-            //console.log("SKIP---------------------");
+          });
+          //console.log("finish chunks");
+        } else {
+          //保存ファイル送信(--filed)
+          try {
+            const outPath = await saveGeoJsonObjectAsStream(geoJson, 'result.' + resultId + '.json');
+            console.log('saved:', outPath);
+            const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-file', {
+              resultId,
+            });
+          } catch (err) {
+            console.error('failed:', err);
+            process.exitCode = 1;
           }
-        });
-        //console.log("finish chunks");
-        io.to(p.sessionId).timeout(10000).emitWithAck('result', {
+        }
+        await io.to(p.sessionId).timeout(120000).emitWithAck('result', {
           resultId,
           geoJson: null, /*geoJsonは送らない*/
           palette: target["splatonePalette"],
