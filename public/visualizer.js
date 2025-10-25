@@ -12,6 +12,21 @@ function addGeoJSONLayer(map, geojson, options = {}) {
     return geojsonLayer;
 }
 
+function setAt(obj, path, value) {
+    if (path.length === 0) return value;
+    let cur = obj;
+    for (let i = 0; i < path.length - 1; i++) {
+        const k = path[i];
+        const nextK = path[i + 1];
+        if (cur[k] == null) {
+            // 次のキーが数値なら []、文字なら {}
+            cur[k] = Number.isInteger(nextK) ? [] : {};
+        }
+        cur = cur[k];
+    }
+    cur[path[path.length - 1]] = value;
+    return obj;
+}
 /*
 使用例:
 const layer = addGeoJSONLayer(map, myGeoJSON, {

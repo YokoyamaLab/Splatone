@@ -11,7 +11,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
   <!-- Leaflet.draw CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin="anonymous" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Toastify -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 </head>
 
 <body>
@@ -99,7 +101,8 @@
   <!-- Map to Image -->
   <script src="https://cdn.jsdelivr.net/npm/leaflet-easyprint@2.1.9/dist/bundle.min.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/leaflet-easyprint@2.1.9/libs/leaflet.min.css" rel="stylesheet">
-
+  <!-- Toastify -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
   <!-- Socket.IO JS -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <!-- Visualize.js -->
@@ -145,15 +148,20 @@
       //console.log('Disconnected from server');
     });
 
-    let sessionId=null;
+    let sessionId = null;
     let visualizers = {};
-    let layerControl=null;
-    socket.on("welcome",async (res) => {
+    let results = {};
+    let layerControl = null;
+    socket.on("welcome", async (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
-      console.log("VIS",res.visualizers);
+      //console.log("VIS", res.visualizers);
       sessionId = res.sessionId;
-      visualizers = Object.fromEntries(await Promise.all(res.visualizers.map(async vis => { const m = await import(new URL(`./visualizer/${vis}/web.js`, import.meta.url).href); return [vis, m.entry ?? m.default ?? m[vis]]; })));
-      console.log(visualizers);
+      visualizers = Object.fromEntries(await Promise.all(res.visualizers.map(async vis => {
+        const m = await import(new URL(`./visualizer/${vis}/web.js`,
+          import.meta.url).href);
+        return [vis, m.entry ?? m.default ?? m[vis]];
+      })));
+      //console.log(visualizers);
     });
 
     function generateLegend(legends) {
@@ -222,46 +230,102 @@
           crawled: acc.crawled + (g.crawled ?? 0),
           total: acc.total + (g.total ?? 0)
         }), {
-        crawled: 0,
-        total: 0
-      }
+          crawled: 0,
+          total: 0
+        }
       );
       if (total == 0) {
         crawled = 1, total = 1;
       }
-      const percent = Math.round((crawled / total) * 100);
-      console.log(`[Done] ${crawled} / ${total} --> ${percent}`);
+      const percent = Math.round((crawled / total) * 100000) / 1000;
+      //console.log(`[Done] ${crawled} / ${total} --> ${percent}`);
       setProgress(document.getElementById("progressCrawl"), percent);
       //ここでHexのプログレスグラデーションレイヤのOpacity調整
       highlightHexById(res.hexId, 1 - res.progress[res.hexId].percent, "#263238");
     });
 
     function isPlainObject(a) {
-      if (a === null || typeof a !== 'object') return false;  // 原始値/関数など除外
+      if (a === null || typeof a !== 'object') return false; // 原始値/関数など除外
       const proto = Object.getPrototypeOf(a);
-      return proto === Object.prototype || proto === null;     // {} / Object.create(null)
+      return proto === Object.prototype || proto === null; // {} / Object.create(null)
     }
+    socket.on("toast", (arg) => {
+      const option = {
+        text:"",
+        duration:arg.close?-1:5000,
+        close:false,
+        gravity:'bottom',
+        position:'center',
+        className:"toast-" + arg.class,
+        ...arg};
+      Toastify(option).showToast();
+      //https://apvarun.github.io/toastify-js/#
+    });
+    socket.on("result-chunk", (arg, callback) => {
+      if(arg.progress){
+        setProgress(document.getElementById("progressCrawl"),Math.round((arg.progress.current/arg.progress.total) * 100000) / 1000);
+      }
+      results[arg.resultId] ??= {};
+      if (arg.kind === "primitive" || arg.kind === "null") {
+        //'number' | 'string' | 'boolean' | 'bigint' | 'symbol' | 'undefined'
+        //console.log(arg.path,arg.value);
+        switch (arg.type) {
+          case 'number':
+            setAt(results[arg.resultId], arg.path, Number(arg.value));
+            break;
+          case 'boolean':
+            setAt(results[arg.resultId], arg.path, arg.value);
+          case 'string':
+            setAt(results[arg.resultId], arg.path, String(arg.value));
+            break;
+          case 'bigint':
+            setAt(results[arg.resultId], arg.path, BigInt(arg.value));
+            break;
+          case 'symbol':
+            setAt(results[arg.resultId], arg.path, Symbol(arg.value));
+            break;
+          default:
+            setAt(results[arg.resultId], arg.path, null);
+        }
+      } else if (arg.kind === "object") {
+        setAt(results[arg.resultId], arg.path, {});
+      } else if (arg.kind === "array") {
+        setAt(results[arg.resultId], arg.path, []);
+      }
+      //console.log("ARK");
+      callback({ pong: Date.now(), ok: true }); // only one argument is expected
+    });
 
     let latestResult = {};
     const overlays = {};
-    socket.on('result',async (res) => {
+    socket.on('result', async (res,callback) => {
+      //console.log("result");
       latestResult["_"]["visualizers"] = res.visualizers;
       latestResult["_"]["plugin"] = res.plugin;
       clearHexHighlight();
-      latestResult = {...latestResult, ...res.geoJson};
-      console.log("result");
-      console.log("geoJSON",res.geoJson);
-      for(const vis in visualizers){
-        const layers = await visualizers[vis](map, res.geoJson[vis], {palette:res.palette});
-        console.log("【レイヤ】",layers);
-        if((layers == null) ){
+      if(res.geoJson == null){
+        res.geoJson = results[res.resultId];
+      }else{
+        results[res.resultId] = res.geoJson;
+      }
+      latestResult = {
+        ...latestResult,
+        ...res.geoJson
+      };
+      for (const vis in visualizers) {
+        const layers = await visualizers[vis](map, res.geoJson[vis], {
+          palette: res.palette
+        });
+        //console.log("【レイヤ】\n", JSON.stringify(layers,null,4));
+        if ((layers == null)) {
           //SKIP
-        }else if(layers.hasOwnProperty("type") && layers["type"]=="FeatureCollection"){
+        } else if (layers.hasOwnProperty("type") && layers["type"] == "FeatureCollection") {
           //レイヤ一つ
-          overlays[`[${vis}]`] =  layers;
-        }else{
-          for(const name in layers){
-            overlays[`[${vis}] ${name}`] =  layers[name];
+          overlays[`[${vis}]`] = layers;
+        } else {
+          for (const name in layers) {
+            console.log("Lay",vis,name);
+            overlays[`[${vis}] ${name}`] = layers[name];
           }
         }
       }
@@ -280,7 +344,7 @@
         });
       }
       ul.innerHTML = generateLegend(palette);
-      console.log(overlays);
+      //console.log(overlays);
       layerControl = L.control.layers([baseLayer], {
         ...overlays,
         "Hex Grid": hexLayer,
@@ -295,11 +359,12 @@
         downloadJSON(`data-${stamp}.json`, latestResult);
         let sessionId = null;
       });
+      callback({ pong: Date.now(), ok: true });
     });
 
     // 地図
     const map = L.map('map', {
-      preferCanvas:true,
+      preferCanvas: true,
       zoomControl: true
     }).setView([lat, lon], 12);
     const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -348,11 +413,11 @@
     L.easyPrint({
       title: 'マップの画像化とダウンロード',
       position: 'bottomright',
-      sizeModes: [ 'A4Landscape'],
+      sizeModes: ['A4Landscape'],
       exportOnly: true,
       filename: 'splatone_export'
     }).addTo(map);
-    
+
     // レイヤ参照
     let hexLayer = null;
     let triLayer = null;
@@ -603,7 +668,7 @@
       const cellSize = document.getElementById('cellSize').value.trim();
       const units = document.getElementById('units').value.trim();
       const keywords = document.getElementById('keywords').value.trim();
-      latestResult["_"]??={};
+      latestResult["_"] ??= {};
       latestResult["_"]["keywords"] = keywords;
       socket.once("hexgrid", (res) => {
         if (res.sessionId) sessionId = res.sessionId;
@@ -611,7 +676,7 @@
         const hex = res.hex;
         const triangles = res.triangles;
         latestResult["_"]["hex"] = hex;
-        latestResult["_"]["triangles"]=[triangles];
+        latestResult["_"]["triangles"] = [triangles];
         renderLayers(hex, triangles);
       });
       socket.emit("target", {

@@ -1,6 +1,5 @@
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
-import { writeFileSync } from 'node:fs';
 
 export default class BulkyVisualizer extends VisualizerBase {
     static id = 'bulky';            // 一意ID（フォルダ名と一致させると運用しやすい）

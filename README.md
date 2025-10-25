@@ -13,8 +13,14 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## 既知のバグ
 
-- JSON.stringify(json)で変換できる大きさに制限があり、数十万件等の大きな結果を生み出すクエリは、クロール後、結果のブラウザへの転送で失敗します。
-  
+- <s>JSON.stringify(json)で変換できる大きさに制限があり、数十万件等の大きな結果を生み出すクエリは、クロール後、結果のブラウザへの転送で失敗します。</s>
+- サイズの問題は一部解決しました。ただし、**データの保存(ダウンロード)はまだできません。**
+  - 問題はサーバからブラウザへ結果を渡す時にJSON.stringify(obj)で結果データをJSON文字列にする時にヒープを食いつぶしています。 とりあえず可視化だけ出来るように、データが大きいと自動で分割して送信するようにしています。ただし、送受信に時間がかかります。（左下のプログレスバーに進捗が表示されます）
+  - **--chopped**オプションをつけると強制的に分割送信します。(ただ遅くなるだけなので意味ないです)
+  - データ保存(ダウンロード)する際にブラウザ上でJSON.stringify(json)を呼ぶ必要があり、そこで詰まります。これの解決策は別途実装します。
+
+![](/assets/screenshot_massive_points_bulky.png)
+
 # 使い方
 
 - [Node.js](https://nodejs.org/ja/download)をインストール後、npxで実行します。
@@ -27,11 +33,15 @@ $ npx -y -- splatone@latest crawler --help
 使い方: crawler.js [options]
 
 Basic Options
-  -p, --plugin    実行するプラグイン
-                                   [文字列] [必須] [選択してください: "flickr"]
+  -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
   -o, --options   プラグインオプション               [文字列] [デフォルト: "{}"]
   -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
+  -c, --chopped   大きなデータを細分化して送信する
+                                                       [真偽] [デフォルト: true]
+
+Debug
+      --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
@@ -41,7 +51,7 @@ Visualization (最低一つの指定が必須です)
 
 オプション:
       --help     ヘルプを表示                                             [真偽]
-      --version  バージョンを表示                                         [真偽] 
+      --version  バージョンを表示                                         [真偽]
 ```
 ## クローリングの実行
 
@@ -76,7 +86,7 @@ APIキーは以下の３種類の方法で与える事ができます
 - 環境変数で渡す
   - ```API_KEY_plugin```という環境変数に格納する
   - コマンドに毎回含めなくて良くなる。
-  - **flickr**の場合は```.API_KEY_flickr```になります。
+  - **flickr**の場合は```API_KEY_flickr```になります。
     - ```plugin```はプラグイン名(flickr等)に置き換えてください。
   - 一時的な環境変数を定義する事も可能です。(bash等)
     - ```API_KEY_flickr="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" node crawler.js -p flickr -k "sea,ocean|mountain,mount" --vis-bulky```
