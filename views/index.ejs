@@ -151,6 +151,7 @@
     let sessionId = null;
     let visualizers = {};
     let results = {};
+    let files = {};
     let layerControl = null;
     socket.on("welcome", async (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
@@ -251,19 +252,37 @@
     }
     socket.on("toast", (arg) => {
       const option = {
-        text:"",
-        duration:arg.close?-1:5000,
-        close:false,
-        gravity:'bottom',
-        position:'center',
-        className:"toast-" + arg.class,
-        ...arg};
+        text: "",
+        duration: arg.close ? -1 : 5000,
+        close: false,
+        gravity: 'bottom',
+        position: 'center',
+        className: "toast-" + arg.class,
+        ...arg
+      };
       Toastify(option).showToast();
       //https://apvarun.github.io/toastify-js/#
     });
+    socket.on("result-file", async(arg, callback) => {
+      try {
+        const file_path = '/out/result.' + arg.resultId + '.json';
+        latestFile = file_path;
+        files[arg.resultId] = file_path;
+        console.log("file path",file_path);
+        results[arg.resultId] = await fetchJsonObject(file_path);
+        console.log('結果ファイル取得完了');
+      } catch (e) {
+        console.error('結果ファイル取得失敗:', e);
+      }
+      //console.log("ARK");
+      callback({
+        pong: Date.now(),
+        ok: true
+      }); // only one argument is expected
+    });
     socket.on("result-chunk", (arg, callback) => {
-      if(arg.progress){
-        setProgress(document.getElementById("progressCrawl"),Math.round((arg.progress.current/arg.progress.total) * 100000) / 1000);
+      if (arg.progress) {
+        setProgress(document.getElementById("progressCrawl"), Math.round((arg.progress.current / arg.progress.total) * 100000) / 1000);
       }
       results[arg.resultId] ??= {};
       if (arg.kind === "primitive" || arg.kind === "null") {
@@ -293,19 +312,23 @@
         setAt(results[arg.resultId], arg.path, []);
       }
       //console.log("ARK");
-      callback({ pong: Date.now(), ok: true }); // only one argument is expected
+      callback({
+        pong: Date.now(),
+        ok: true
+      }); // only one argument is expected
     });
 
     let latestResult = {};
+    let latestFile = null;
     const overlays = {};
-    socket.on('result', async (res,callback) => {
+    socket.on('result', async (res, callback) => {
       //console.log("result");
       latestResult["_"]["visualizers"] = res.visualizers;
       latestResult["_"]["plugin"] = res.plugin;
       clearHexHighlight();
-      if(res.geoJson == null){
+      if (res.geoJson == null) {
         res.geoJson = results[res.resultId];
-      }else{
+      } else {
         results[res.resultId] = res.geoJson;
       }
       latestResult = {
@@ -324,7 +347,7 @@
           overlays[`[${vis}]`] = layers;
         } else {
           for (const name in layers) {
-            console.log("Lay",vis,name);
+            console.log("Lay", vis, name);
             overlays[`[${vis}] ${name}`] = layers[name];
           }
         }
@@ -354,12 +377,19 @@
       });
       layerControl.addTo(map);
       document.getElementById("map_legend")?.appendChild(ul);
-      document.getElementById("download-json").addEventListener("click", () => {
+      document.getElementById("download-json").addEventListener("click", async () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        downloadJSON(`data-${stamp}.json`, latestResult);
+        if(latestFile===null){
+          downloadJSON(`splatone-${stamp}.json`, latestResult);
+        }else{
+          await downloadJSONFile(`splatone-${stamp}.json`, latestFile);
+        }
         let sessionId = null;
       });
-      callback({ pong: Date.now(), ok: true });
+      callback({
+        pong: Date.now(),
+        ok: true
+      });
     });
 
     // 地図
