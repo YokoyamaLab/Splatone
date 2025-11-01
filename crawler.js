@@ -28,7 +28,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
-import { dfsObject, saveGeoJsonObjectAsStream } from './lib/splatone.js';
+import { dfsObject, bboxSize, saveGeoJsonObjectAsStream } from './lib/splatone.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -108,7 +108,7 @@ try {
   // コマンド例
   // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
   // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
-  // node crawler.js -p flickr -k "水辺=sea,ocean,beach|山岳=mountain,mount,hill" --vis-bulky --chopped
+  // node crawler.js -p flickr -k "水辺=sea,ocean,beach|山岳=mountain,mount,hill" --vis-bulky --filed
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
@@ -304,7 +304,7 @@ try {
       title: title,
       lat: DEFAULT_CENTER.lat,
       lon: DEFAULT_CENTER.lon,
-      defaultCellSize: 0.5,
+      defaultCellSize: 0,
       defaultUnits: 'kilometers',
       defaultKeywords: argv.keywords,
     });
@@ -357,19 +357,32 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
-        const { bbox, drawn, cellSize = 0, units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
+        let { bbox, drawn, cellSize = 0, units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
+        const boundary = String(bbox).split(',').map(Number);
         if (cellSize == 0) {
           //セルサイズ自動決定()
+          //console.log("[cellSize?]",boundary,units);
+          const { width, height } = bboxSize(boundary, units);
+          //console.log("","w=",width,"/\th=",height);
+          cellSize = Math.max(width / (3 * 30), height / (30 * Math.sqrt(3)));
+          if(cellSize==0){
+            cellSize=1;
+          }
+          const msg = "セルサイズを[ " + cellSize + ' ' + units + " ]に設定しました。";
+          console.log(msg)
+          io.to(sessionId).timeout(5000).emit('toast', {
+            text: msg,
+            class: "info"
+          });
         }
         const fallbackBbox = [139.55, 35.53, 139.92, 35.80];
         let bboxArray = fallbackBbox;
 
         if (bbox) {
-          const parts = String(bbox).split(',').map(Number);
-          if (parts.length !== 4 || !parts.every(Number.isFinite)) {
+          if (boundary.length !== 4 || !boundary.every(Number.isFinite)) {
             return res.status(400).json({ error: 'bbox must be "minLon,minLat,maxLon,maxLat"' });
           }
-          bboxArray = parts;
+          bboxArray = boundary;
         }
 
         const sizeNum = Number(cellSize);

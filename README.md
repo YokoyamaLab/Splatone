@@ -11,14 +11,12 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Bulky: クロールした全てのジオタグを小さな点で描画する
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
 
-## 既知のバグ
+## Change Log
 
-- <s>JSON.stringify(json)で変換できる大きさに制限があり、数十万件等の大きな結果を生み出すクエリは、クロール後、結果のブラウザへの転送で失敗します。</s>
-- サイズの問題は、一度ファイルに書き出す事で解決しました。(v0.0.6)
-  - **--no-filed**オプションを付ける事で、従来の方法で実行できます。(ファイルに書き出すより多少速い)
-- 以下の画像のように大きな範囲で多くのジオタグが収集できるようになりました。
+### v0.0.6 →　v0.0.7
 
-![](/assets/screenshot_massive_points_bulky.png)
+* Hexサイズの自動設定モードが実装され、デフォルトとなりました。
+  * Web画面のハンバーガーメニューから変更できます。(サイズ0で自動)
 
 # 使い方
 
@@ -162,3 +160,8 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 
 ![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/icon_data_export.png?raw=true)
 
+### 広範囲なデータ収集例
+
+* あまりにも大きいとFlickrから一時的にBANされることがありますので注意してください。
+
+![](/assets/screenshot_massive_points_bulky.png)
