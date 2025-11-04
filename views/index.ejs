@@ -370,6 +370,7 @@
       //console.log(overlays);
       layerControl = L.control.layers([baseLayer], {
         ...overlays,
+        "Boundary": drawnItems,
         "Hex Grid": hexLayer,
         "Tri Grid": triLayer
       }, {
