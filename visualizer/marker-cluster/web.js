@@ -125,7 +125,7 @@ export default async function main(map, geojson, options = { palette: {} }) {
 
         // まだマップに載っていないクラスターは載せる
         for (const [cat, grp] of clusterByCategory.entries()) {
-            console.log("add map", cat);
+            //console.log("add map", cat);
             if (!map.hasLayer(grp)) grp.addTo(map);
         }
 
@@ -157,7 +157,7 @@ export default async function main(map, geojson, options = { palette: {} }) {
 
     // 実データを投入（fetchで置き換え可）
     for (const cat in geojson) {
-        console.log(cat);
+        //console.log(cat);
         addFeatureCollectionByCategory(geojson[cat], cat);
     }
     // Mapから単なるObjectへ

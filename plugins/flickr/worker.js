@@ -8,6 +8,7 @@ export default async function ({
     tags = "",
     category = "",
     max_upload_date = null,
+    min_upload_date = null,
     hex = null,
     triangles = null,
 }) {
@@ -16,8 +17,9 @@ export default async function ({
         bbox: bbox.join(','),
         tags: tags,
         max_upload_date: max_upload_date,
-
+        //min_upload_date: min_upload_date,
     };
+    console.log("[baseParams]",baseParams);
     const res = await flickr("flickr.photos.search", {
         ...baseParams,
         has_geo: 1,
@@ -26,8 +28,8 @@ export default async function ({
         page: 1,
         sort: "date-posted-desc"
     });
-    //console.log(baseParams);
-    //console.log("[(Crawl)", hex.properties.hexId, category, "]", (new Date(max_upload_date * 1000)).toLocaleString(), "-> photos:", res.photos.photo.length, "/", res.photos.total);
+    console.log(baseParams);
+    console.log("[(Crawl)", hex.properties.hexId, category, "]", (new Date(min_upload_date * 1000)).toLocaleString(),"->",(new Date(max_upload_date * 1000)).toLocaleString(), "-> photos:", res.photos.photo.length, "/", res.photos.total);
     const ids = [];
     const authors = {};
     const photos = featureCollection(res.photos.photo.filter(photo => {
@@ -70,6 +72,7 @@ export default async function ({
         tags,
         category,
         next_max_upload_date,
+        min_upload_date,
         total: res.photos.total,
         outside: outside,
         ids,

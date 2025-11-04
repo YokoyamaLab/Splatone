@@ -13,7 +13,7 @@ export default class FlickrPlugin extends PluginBase {
     }
 
     // 任意の公開メソッド
-    async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, sessionId }) {
+    async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, min_upload_date, sessionId }) {
         if (!this.started) {
             this.start();
         }
@@ -46,6 +46,7 @@ export default class FlickrPlugin extends PluginBase {
                     category: ck,
                     tags,
                     max_upload_date,
+                    min_upload_date,
                     sessionId
                 });
             }));

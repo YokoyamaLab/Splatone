@@ -267,6 +267,9 @@ try {
     return k1 < k2 ? k1 : k2;
   }
 
+  function unixTimeLocal(year, month, day, hour = 0, minute = 0, second = 0) {
+    return Math.round(new Date(year, month - 1, day, hour, minute, second).getTime()/1000);
+  }
 
   function defaultMaxUploadTime(date = new Date()) {
     return Math.floor(date / 1000) - 360;
@@ -333,15 +336,17 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
-
-        await plugins.call('flickr', 'crawl', {
+        const optPlugin = {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
           //tags: targets[req.sessionId].tags,
           categories: targets[req.sessionId].categories,
           max_upload_date: defaultMaxUploadTime(),
-        });
+          min_upload_date: unixTimeLocal(2004,1,1)
+        };
+        console.log(optPlugin);
+        await plugins.call('flickr', 'crawl', optPlugin);
       }
       catch (e) {
         console.error(e);
@@ -365,8 +370,8 @@ try {
           const { width, height } = bboxSize(boundary, units);
           //console.log("","w=",width,"/\th=",height);
           cellSize = Math.max(width / (3 * 30), height / (30 * Math.sqrt(3)));
-          if(cellSize==0){
-            cellSize=1;
+          if (cellSize == 0) {
+            cellSize = 1;
           }
           const msg = "セルサイズを[ " + cellSize + ' ' + units + " ]に設定しました。";
           console.log(msg)
@@ -583,9 +588,9 @@ try {
     // 注意：ここで filename は渡さない。run 時に切り替える
   });
   await subscribe('splatone:start', async p => {
-    //console.log('[splatone:start]', p);
+    console.log('[splatone:start]', p);
     const rtn = await runTask(p.plugin, p);
-    //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
+    console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
     crawlers[p.sessionId][rtn.hexId] ??= {};
     crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
     crawlers[p.sessionId][rtn.hexId][rtn.category].ids ??= new Set();
