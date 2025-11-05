@@ -17,6 +17,9 @@
   "bin": {
     "crawler": "./crawler.js"
   },
+  "imports": {
+    "#lib/*": "./lib/*.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
