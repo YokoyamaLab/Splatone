@@ -28,7 +28,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
-import { dfsObject, bboxSize, saveGeoJsonObjectAsStream } from './lib/splatone.js';
+import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildPluginsOptions, loadAPIKey } from '#lib/splatone';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -36,6 +36,7 @@ const VIZ_BASE = resolve(__dirname, "visualizer");
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
+let pluginsOptions = {};
 
 try {
 
@@ -164,6 +165,9 @@ try {
         catch (e) { throw new Error(`--${name}: JSON エラー: ${e.message}`); }
       })()
     });
+  plugins.list().forEach(async (plug) => {
+    yargv = await plugins.call(plug, "yargv", yargv);
+  })
   Object.keys(all_visualizers).forEach((vis) => {
     yargv = yargv.option('vis-' + vis, {
       group: 'Visualization (最低一つの指定が必須です)',
@@ -172,7 +176,7 @@ try {
       description: all_visualizers[vis].description
     })
   });
-  yargv = yargv.check((argv, options) => {
+  yargv = yargv.check(async (argv, options) => {
     if (Object.keys(all_visualizers).filter(v => argv["vis-" + v]).length == 0) {
       throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
     }
@@ -180,15 +184,22 @@ try {
       console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
       argv.chopped = false;
     }
+    pluginsOptions = buildPluginsOptions(argv, plugins.list())
+    console.log(argv, pluginsOptions);
+    pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
+    console.log(""); console.log(""); console.log("");
+    console.log(pluginsOptions[argv.plugin]);
+    console.log(""); console.log(""); console.log("");
     return true;
   });
   const argv = await yargv.parseAsync();
+
   const visualizers = {};
   for (const vis of Object.keys(all_visualizers).filter(v => argv[`vis-${v}`])) {
     visualizers[vis] = new all_visualizers[vis]();
   }
 
-  const plugin_options = argv.options?.[argv.plugin] ?? {}
+  /* const plugin_options = argv.options?.[argv.plugin] ?? {}
   try {
     plugin_options.API_KEY = await loadAPIKey("flickr") ?? plugin_options.API_KEY;
   } catch (e) {
@@ -196,45 +207,11 @@ try {
       console.error("Error loading API key:", e.message);
     }
     //Nothing to do
-  }
-  await plugins.call(argv.plugin, 'init', plugin_options);
+  }*/
+  //pluginsOptions = buildPluginsOptions(argv, plugins.list());
+  await plugins.call(argv.plugin, 'init', pluginsOptions[argv.plugin]);
   if (argv.debugVerbose) {
     console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
-  }
-
-  /* API Key読み込み */
-  async function loadAPIKey(plugin = 'flickr') {
-    //ファイルチェック→環境変数チェック
-
-    const filePath = ".API_KEY." + plugin;
-    const file = resolve(filePath);
-    // 存在＆読取権限チェック
-    let key = null;
-    try {
-      await access(file, constants.F_OK | constants.R_OK);
-      // 読み込み & トリム
-      const raw = await readFile(file, 'utf8');
-      //console.log(`[API KEY (${plugin}})] Read from FILE`);
-      key = raw.trim();
-    } catch (err) {
-      if (Object.prototype.hasOwnProperty.call(process.env, "API_KEY_" + plugin)) {
-        //console.log(`[API KEY (${plugin}})] Read from ENV`);
-        key = process.env["API_KEY_" + plugin] ?? null;
-      } else {
-        const code = /** @type {{ code?: string }} */(err).code || 'UNKNOWN';
-        throw new Error(`APIキーのファイルもしくは環境変数にアクセスできません: ${file} (code=${code})`);
-      }
-    }
-    if (!key) {
-      throw new Error(`APIキーのファイルが空です: ${file}`);
-    }
-    // ※任意: Flickr APIキーの緩い形式チェック（英数32+文字）
-    // 公式に厳格仕様が明示されていないため、緩めのガードに留めます。
-    if (!/^[A-Za-z0-9]{32,}$/.test(key)) {
-      // 形式が怪しい場合は警告だけにするなら console.warn に変更
-      throw new Error(`APIキーの形式が不正の可能性があります（英数字32文字以上を想定）: ${file}`);
-    }
-    return key;
   }
 
 
@@ -268,7 +245,7 @@ try {
   }
 
   function unixTimeLocal(year, month, day, hour = 0, minute = 0, second = 0) {
-    return Math.round(new Date(year, month - 1, day, hour, minute, second).getTime()/1000);
+    return Math.round(new Date(year, month - 1, day, hour, minute, second).getTime() / 1000);
   }
 
   function defaultMaxUploadTime(date = new Date()) {
@@ -331,22 +308,25 @@ try {
     socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now(), visualizers: Object.keys(visualizers) });
     //クローリング開始
     socket.on("crawling", async (req) => {
+
       try {
         if (sessionId !== req.sessionId) {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
+        console.log(targets[req.sessionId]);
         const optPlugin = {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
           //tags: targets[req.sessionId].tags,
           categories: targets[req.sessionId].categories,
-          max_upload_date: defaultMaxUploadTime(),
-          min_upload_date: unixTimeLocal(2004,1,1)
+          //max_upload_date: defaultMaxUploadTime(),
+          //min_upload_date: unixTimeLocal(2004, 1, 1),
+          pluginOptions: pluginsOptions[argv.plugin]
         };
-        console.log(optPlugin);
-        await plugins.call('flickr', 'crawl', optPlugin);
+        //console.log(optPlugin);
+        await plugins.call(argv.plugin, 'crawl', optPlugin);
       }
       catch (e) {
         console.error(e);
@@ -357,7 +337,7 @@ try {
     // クロール範囲指定
     socket.on("target", (req) => {
       try {
-        //console.log("target:", req);
+        console.log("target:", req);
         if (sessionId !== req.sessionId) {
           console.warn("invalid sessionId:", req.sessionId);
           return;
@@ -374,7 +354,9 @@ try {
             cellSize = 1;
           }
           const msg = "セルサイズを[ " + cellSize + ' ' + units + " ]に設定しました。";
-          console.log(msg)
+          if (argv.debugVerbose) {
+            console.log("INFO:", msg)
+          }
           io.to(sessionId).timeout(5000).emit('toast', {
             text: msg,
             class: "info"
@@ -515,7 +497,7 @@ try {
 
         //console.log(JSON.stringify(hexFC, null, 2));
         //res.json({ hex: hexFC, triangles: trianglesFC });
-        targets[sessionId] = { hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
+        targets[sessionId] = { hex: hexFC, triangles: trianglesFC, categories, splatonePalette, };
         socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
       } catch (e) {
         console.error(e);
@@ -588,9 +570,9 @@ try {
     // 注意：ここで filename は渡さない。run 時に切り替える
   });
   await subscribe('splatone:start', async p => {
-    console.log('[splatone:start]', p);
+    //console.log('[splatone:start]', p);
     const rtn = await runTask(p.plugin, p);
-    console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
+    //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
     crawlers[p.sessionId][rtn.hexId] ??= {};
     crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
     crawlers[p.sessionId][rtn.hexId][rtn.category].ids ??= new Set();
@@ -601,7 +583,7 @@ try {
     crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
     if (argv.debugVerbose) {
-      console.log(`(CRAWL) ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
+      console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
     }
     const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
     crawlers[p.sessionId][rtn.hexId][rtn.category].items
@@ -610,7 +592,7 @@ try {
     io.to(p.sessionId).emit('progress', { hexId: rtn.hexId, progress });
     if (!rtn.final) {
       // 次回クロール用に更新
-      p.max_upload_date = rtn.next_max_upload_date;
+      p.pluginOptions = rtn.nextPluginOptions;
       //console.log("next max_upload_date:", p.max_upload_date);
       api.emit('splatone:start', p);
     } else if (finish) {
@@ -628,7 +610,7 @@ try {
 
     let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
 
-    console.log('[splatone:finish]');
+    //console.log('[splatone:finish]');
     try {
       if (argv.chopped || argv.filed) {
         throw new RangeError("Invalid string length");
@@ -728,6 +710,6 @@ try {
 
   process.on('SIGINT', async () => { await plugins.stopAll(); process.exit(0); });
 } catch (e) {
+  console.error("[SPLATONE ERROR]");
   console.error(e);
-
 }

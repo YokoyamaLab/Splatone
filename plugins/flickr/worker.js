@@ -3,23 +3,25 @@ import { point, featureCollection } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 
 export default async function ({
-    API_KEY = "",
+    //API_KEY = "",
     bbox = [0, 0, 0, 0],
     tags = "",
     category = "",
-    max_upload_date = null,
-    min_upload_date = null,
+    //max_upload_date = null,
+    //min_upload_date = null,
     hex = null,
     triangles = null,
+    pluginOptions
 }) {
-    const { flickr } = createFlickr(API_KEY);
+    console.log("{PLUGIN}",pluginOptions);
+    const { flickr } = createFlickr(pluginOptions["APIKEY"]);
     const baseParams = {
         bbox: bbox.join(','),
         tags: tags,
-        max_upload_date: max_upload_date,
-        //min_upload_date: min_upload_date,
+        max_upload_date: pluginOptions["DateMax"],
+        min_upload_date: pluginOptions["DateMin"],
     };
-    console.log("[baseParams]",baseParams);
+    //console.log("[baseParams]",baseParams);
     const res = await flickr("flickr.photos.search", {
         ...baseParams,
         has_geo: 1,
@@ -28,8 +30,8 @@ export default async function ({
         page: 1,
         sort: "date-posted-desc"
     });
-    console.log(baseParams);
-    console.log("[(Crawl)", hex.properties.hexId, category, "]", (new Date(min_upload_date * 1000)).toLocaleString(),"->",(new Date(max_upload_date * 1000)).toLocaleString(), "-> photos:", res.photos.photo.length, "/", res.photos.total);
+    //console.log(baseParams);
+    //console.log("[(Crawl)", hex.properties.hexId, category, "]", (new Date(min_upload_date * 1000)).toLocaleString(),"->",(new Date(max_upload_date * 1000)).toLocaleString(), "-> photos:", res.photos.photo.length, "/", res.photos.total);
     const ids = [];
     const authors = {};
     const photos = featureCollection(res.photos.photo.filter(photo => {
@@ -66,13 +68,13 @@ export default async function ({
         console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
         next_max_upload_date -= 60 * 60 * skip;
     }
+    pluginOptions["DateMax"] = next_max_upload_date;
     return {
         photos,
         hexId: hex.properties.hexId,
         tags,
         category,
-        next_max_upload_date,
-        min_upload_date,
+        nextPluginOptions: pluginOptions,
         total: res.photos.total,
         outside: outside,
         ids,
