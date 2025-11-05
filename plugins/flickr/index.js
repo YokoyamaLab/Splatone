@@ -93,7 +93,7 @@ export default class FlickrPlugin extends PluginBase {
     }
 
     // 任意の公開メソッド
-    async crawl({ hexGrid, triangles/*, tags*/, categories, max_upload_date, min_upload_date, sessionId, pluginOptions }) {
+    async crawl({ hexGrid, triangles/*, tags*/, categories, sessionId, pluginOptions }) {
         if (!this.started) {
             this.start();
         }
@@ -126,8 +126,6 @@ export default class FlickrPlugin extends PluginBase {
                     bbox: bbox(item.geometry),
                     category: ck,
                     tags,
-                    //max_upload_date: pluginOptions[this.argKey("DateMax")],
-                    //min_upload_date: pluginOptions[this.argKey("DateMin")],
                     pluginOptions,
                     sessionId
                 });

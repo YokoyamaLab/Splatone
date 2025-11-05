@@ -319,10 +319,7 @@ try {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
-          //tags: targets[req.sessionId].tags,
           categories: targets[req.sessionId].categories,
-          //max_upload_date: defaultMaxUploadTime(),
-          //min_upload_date: unixTimeLocal(2004, 1, 1),
           pluginOptions: pluginsOptions[argv.plugin]
         };
         //console.log(optPlugin);
@@ -593,7 +590,6 @@ try {
     if (!rtn.final) {
       // 次回クロール用に更新
       p.pluginOptions = rtn.nextPluginOptions;
-      //console.log("next max_upload_date:", p.max_upload_date);
       api.emit('splatone:start', p);
     } else if (finish) {
       if (argv.debugVerbose) {
