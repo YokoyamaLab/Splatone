@@ -185,11 +185,7 @@ try {
       argv.chopped = false;
     }
     pluginsOptions = buildPluginsOptions(argv, plugins.list())
-    console.log(argv, pluginsOptions);
     pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
-    console.log(""); console.log(""); console.log("");
-    console.log(pluginsOptions[argv.plugin]);
-    console.log(""); console.log(""); console.log("");
     return true;
   });
   const argv = await yargv.parseAsync();
@@ -215,6 +211,7 @@ try {
   }
 
 
+  const processing = {};
   const crawlers = {};
   const targets = {};
   // 初期中心（凱旋門）
@@ -314,7 +311,6 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
-        console.log(targets[req.sessionId]);
         const optPlugin = {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
@@ -334,7 +330,6 @@ try {
     // クロール範囲指定
     socket.on("target", (req) => {
       try {
-        console.log("target:", req);
         if (sessionId !== req.sessionId) {
           console.warn("invalid sessionId:", req.sessionId);
           return;
@@ -568,7 +563,9 @@ try {
   });
   await subscribe('splatone:start', async p => {
     //console.log('[splatone:start]', p);
-    const rtn = await runTask(p.plugin, p);
+    processing[p.sessionId] = (processing[p.sessionId] ?? 0) + 1;
+    let rtn = await runTask(p.plugin, p);
+    processing[p.sessionId]--;
     //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
     crawlers[p.sessionId][rtn.hexId] ??= {};
     crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
@@ -579,19 +576,25 @@ try {
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled ??= 0;
     crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
     crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
+    
     if (argv.debugVerbose) {
       console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
     }
     const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
     crawlers[p.sessionId][rtn.hexId][rtn.category].items
       = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, photos);
+
     const { stats, progress, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
     io.to(p.sessionId).emit('progress', { hexId: rtn.hexId, progress });
     if (!rtn.final) {
       // 次回クロール用に更新
-      p.pluginOptions = rtn.nextPluginOptions;
-      api.emit('splatone:start', p);
-    } else if (finish) {
+      rtn.nextPluginOptions.forEach((nextPluginOptions) => {
+        const p_clone = structuredClone(p);
+        p_clone.pluginOptions = nextPluginOptions
+        api.emit('splatone:start', p_clone);
+      });
+      //} else if (finish) {
+    } else if (processing[p.sessionId] == 0) {
       if (argv.debugVerbose) {
         console.table(stats);
       }
@@ -603,7 +606,6 @@ try {
     const resultId = uniqid();
     const result = crawlers[p.sessionId];
     const target = targets[p.sessionId];
-
     let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
 
     //console.log('[splatone:finish]');
