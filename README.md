@@ -12,8 +12,11 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
 
 ## Change Log
-### v0.0.8 →　v0.0.9 
 
+### v0.0.8 →　v0.0.9 →　v0.0.10 
+
+* 【重要】**APIキー**の指定方法が変わりました。
+  * ```--p-flickr-APIKEY```オプションを使います。
 * クエリを時間方向でも分割し効率化しました。(使い方に変更はありません)
 
 ### v0.0.7 →　v0.0.8 
@@ -36,7 +39,9 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ```shell
 $ npx -y -- splatone@latest crawler --help
+[app] [plugin] loaded: flickr@1.0.0
 使い方: crawler.js [options]
+
 Basic Options
   -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
   -o, --options   プラグインオプション               [文字列] [デフォルト: "{}"]
@@ -49,6 +54,13 @@ Basic Options
 
 Debug
       --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
+
+For flickr Plugin
+      --p-flickr-APIKEY   Flickr ServiceのAPI KEY                       [文字列]
+      --p-flickr-DateMax  クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1762440294]
+      --p-flickr-DateMin  クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1072936800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
@@ -70,26 +82,25 @@ Visualization (最低一つの指定が必須です)
 
 ### 事例１)　商業施設・飲食施設・文化施設・公園の分類
 ```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
+$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
 ```
 - オプションの **--vis-bulky** を **--vis-marker-cluster** に変更する事でマーカークラスターで可視化できます。
 
 ### 事例２）水路・陸路・ランドマーク等の分類
 ```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
+$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
 ```
 - ベネチア等の水路のある町でやると面白いです
 
 # 詳細説明
 
-## APIキーの与え方
+## Flickr APIキーの与え方
 
 APIキーは以下の３種類の方法で与える事ができます
 - ```--option```に含める
   - 上記コマンド例の方法
-  - **flickr**の場合は``` -o '{"plugin":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'```になります。
+  - **flickr**の場合は``` --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ```になります。
   - [注意] コマンドを他の人と共有する時、APIキーをそのまま渡す事は危険です。
-  - **flickr**の場合は``` -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'```になります。
 - 環境変数で渡す
   - ```API_KEY_plugin```という環境変数に格納する
   - コマンドに毎回含めなくて良くなる。
@@ -111,7 +122,7 @@ APIキーは以下の３種類の方法で与える事ができます
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky
+$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky
 ```
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
@@ -119,7 +130,7 @@ $ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaa
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-marker-cluster
+$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-marker-cluster
 ```
 ## キーワード指定方法
 
@@ -150,7 +161,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 ### 実行例 (海岸線と山岳の分布)
 
 ```shell
-$ node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "sea,ocean|mountain,mount" --vis-bulky
+$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "sea,ocean|mountain,mount" --vis-bulky
 ```
 ![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
 
