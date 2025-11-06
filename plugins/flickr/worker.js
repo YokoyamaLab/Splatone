@@ -11,7 +11,7 @@ export default async function ({
     triangles = null,
     pluginOptions
 }) {
-    console.log("{PLUGIN}",pluginOptions);
+    //console.log("{PLUGIN}", pluginOptions);
     const { flickr } = createFlickr(pluginOptions["APIKEY"]);
     const baseParams = {
         bbox: bbox.join(','),
@@ -55,6 +55,8 @@ export default async function ({
     }));
     const outside = res.photos.photo.length - photos.features.length;
     //console.log(JSON.stringify(photos, null, 4));
+
+    const nextPluginOptionsDelta = [];
     let next_max_date
         = res.photos.photo.length > 0
             ? (res.photos.photo[res.photos.photo.length - 1].dateupload) - (res.photos.photo[res.photos.photo.length - 1].dateupload == res.photos.photo[0].dateupload ? 1 : 0)
@@ -65,6 +67,35 @@ export default async function ({
         console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
         next_max_date -= 60 * 60 * skip;
     }
+    if (res.photos.pages > 4) {
+        //結果の最大・最小を2分割
+        const mid = ((next_max_date - pluginOptions.DateMin) / 2) + pluginOptions.DateMin;
+        nextPluginOptionsDelta.push({
+            'DateMax': next_max_date,
+            'DateMin': mid
+        });
+        nextPluginOptionsDelta.push({
+            'DateMax': mid,
+            'DateMin': pluginOptions.DateMin
+        });
+    } else {
+        nextPluginOptionsDelta.push({
+            'DateMax': next_max_date,
+            'DateMin': pluginOptions.DateMin
+        });
+    }
+    return {
+        photos,
+        hexId: hex.properties.hexId,
+        tags,
+        category,
+        nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
+        total: res.photos.total,
+        outside: outside,
+        ids,
+        final: res.photos.photo.length == res.photos.total
+    };
+    /*
     pluginOptions["DateMax"] = next_max_date;
     return {
         photos,
@@ -76,5 +107,5 @@ export default async function ({
         outside: outside,
         ids,
         final: res.photos.photo.length == res.photos.total
-    };
+    };*/
 }

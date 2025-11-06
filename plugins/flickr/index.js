@@ -80,7 +80,7 @@ export default class FlickrPlugin extends PluginBase {
         const RE_FLICKR_API_KEY = /^[0-9a-f]{32}$/i;
         if (!options['APIKEY']) {
             const apikey = await loadAPIKey(this.id);
-            console.log(apikey);
+            //console.log(apikey);
             options['APIKEY'] = apikey;
         } else if (!RE_FLICKR_API_KEY.test(options['APIKEY'])) {
             throw new Error('Invalid Flickr API key format: 32桁 16進数で指定してください');
@@ -97,8 +97,6 @@ export default class FlickrPlugin extends PluginBase {
         if (!this.started) {
             this.start();
         }
-        console.log("【optio】",pluginOptions);
-
         const getTrianglesInHex = (hex, triangles) => {
             const hexPoly = polygon(hex.geometry.coordinates);
             const selected = triangles.features.filter(tri => {
