@@ -16,17 +16,17 @@ export default async function ({
     const baseParams = {
         bbox: bbox.join(','),
         tags: tags,
-        max_upload_date: pluginOptions["DateMax"],
-        min_upload_date: pluginOptions["DateMin"],
+        extras: pluginOptions["Extras"],
+        sort: pluginOptions["Date"] == "upload" ? "date-posted-desc" : "date-taken-desc"
     };
+    baseParams[pluginOptions["Date"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = pluginOptions["DateMax"];
+    baseParams[pluginOptions["Date"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = pluginOptions["DateMin"];
     //console.log("[baseParams]",baseParams);
     const res = await flickr("flickr.photos.search", {
         ...baseParams,
         has_geo: 1,
-        extras: "date_upload,date_taken,owner_name,geo,url_s,tags",
         per_page: 250,
         page: 1,
-        sort: "date-posted-desc"
     });
     //console.log(baseParams);
     const ids = [];

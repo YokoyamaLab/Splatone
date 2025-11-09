@@ -22,6 +22,27 @@ export default class FlickrPlugin extends PluginBase {
             description: 'Flickr ServiceのAPI KEY'
         }).coerce(this.argKey('APIKEY'), opt => {
             return opt
+        }).option(this.argKey('Extras'), {
+            group: 'For ' + this.id + ' Plugin',
+            type: 'string',
+            default: 'date_upload,date_taken,owner_name,geo,url_s,tags',
+            description: 'カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持)'
+        }).coerce(this.argKey('Extras'), opt => {
+            const fields = ['description', 'license', 'date_upload', 'date_taken', 'owner_name', 'icon_server', 'original_format', 'last_update', 'geo', 'tags', 'machine_tags', 'o_dims', 'views', 'media', 'path_alias', 'url_sq', 'url_t', 'url_s', 'url_q', 'url_m', 'url_n', 'url_z', 'url_c', 'url_l', 'url_o'];
+            const extras = { 'date_upload': true, 'date_taken': true, 'owner_name': true, 'geo': true, 'url_s': true, 'tags': true };
+            opt.split(',').forEach(f => {
+                if (fields.includes(f)) {
+                    extras[f] = true;
+                } else {
+                    console.warn(`[${this.id} Warning] extras=${f}はリストに無いため無視されました。`);
+                }
+            });
+            return object.Keys(extras).join(",");
+        }).option(this.argKey('Date'), {
+            group: 'For ' + this.id + ' Plugin',
+            choices: ['upload', 'taken'],
+            default: "upload",
+            description: '利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)'
         }).option(this.argKey('DateMax'), {
             group: 'For ' + this.id + ' Plugin',
             type: 'string',
