@@ -13,22 +13,25 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## Change Log
 
+### v0.0.10 →　v0.0.11 
+
+* 時間軸として使用する日付を選択可能に (```--p-flickr-DateMode```)
+  * upload: Flickrにアップロードされたタイムスタンプを遡ってクローリング (デフォルト)
+  * taken: 写真の撮影日時を遡ってクローリング
+* extrasを指定可能に (```--p-flickr-Extras```)
+    * https://www.flickr.com/services/api/explore/flickr.photos.search
+    * デフォルト値:　```date_upload,date_taken,owner_name,geo,url_s,tags```
+      * これらはコマンドライン引数での指定の有無に関わらず付与されます
+* 自動指定時のHexGridの最小サイズを0.5kmに
+
 ### v0.0.8 →　v0.0.9 →　v0.0.10 
 
 * 【重要】**APIキー**の指定方法が変わりました。
   * ```--p-flickr-APIKEY```オプションを使います。
 * クエリを時間方向でも分割し効率化しました。(使い方に変更はありません)
 
-### v0.0.7 →　v0.0.8 
+[これ以前のログ](CHANGELOG.md)
 
-* 範囲指定とHexGridの表示・非表示ができるようになりました。
-  * デフォルトで非表示
-  * 表示したい場合はレイヤコントロールにて切り替えてください
-
-### v0.0.6 →　v0.0.7
-
-* Hexサイズの自動設定モードが実装され、デフォルトとなりました。
-  * Web画面のハンバーガーメニューから変更できます。(サイズ0で自動)
 
 # 使い方
 
@@ -57,10 +60,15 @@ Debug
 
 For flickr Plugin
       --p-flickr-APIKEY   Flickr ServiceのAPI KEY                       [文字列]
+      --p-flickr-extras   カンマ区切り/保持する写真のメタデータ(デフォルト値は記
+                          載の有無に関わらず保持)
+       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
+      --p-flickr-DateMode 利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
+                    [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-DateMax  クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1762440294]
+                                               [文字列] [デフォルト: 1762701683]
       --p-flickr-DateMin  クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1072936800]
+                                               [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
@@ -82,13 +90,13 @@ Visualization (最低一つの指定が必須です)
 
 ### 事例１)　商業施設・飲食施設・文化施設・公園の分類
 ```shell
-$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
+$ node crawler.js -p flickr -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 - オプションの **--vis-bulky** を **--vis-marker-cluster** に変更する事でマーカークラスターで可視化できます。
 
 ### 事例２）水路・陸路・ランドマーク等の分類
 ```shell
-$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
+$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 - ベネチア等の水路のある町でやると面白いです
 
@@ -122,7 +130,7 @@ APIキーは以下の３種類の方法で与える事ができます
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky
+$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
@@ -130,7 +138,7 @@ $ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-marker-cluster
+$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 ## キーワード指定方法
 
@@ -161,7 +169,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 ### 実行例 (海岸線と山岳の分布)
 
 ```shell
-$ node crawler.js -p flickr --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -k "sea,ocean|mountain,mount" --vis-bulky
+$ node crawler.js -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 ![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
 

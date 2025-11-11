@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@turf/turf": "^7.2.0",
+    "bottleneck": "^2.19.5",
     "chroma-js": "^3.1.2",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
