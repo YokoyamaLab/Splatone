@@ -15,7 +15,7 @@ export default async function ({
     pluginOptions,
     sessionId
 }) {
-    debugVerbose=true;
+    debugVerbose = true;
     //console.log("{PLUGIN}", pluginOptions);
     const { flickr } = createFlickr(pluginOptions["APIKEY"]);
     if (!pluginOptions.TermId) {
@@ -90,9 +90,9 @@ export default async function ({
                 : null;
         const window = res.photos.photo.length == 0 ? 0 : maxDate - minDate;
         if (Object.keys(authors).length == 1 && res.photos.photo.length >= 250 && window < 60 * 60) {
-            const skip = window < 5 ? 0.1 : 12;
+            const skip = window < 0 ? Math.abs(window) * 1.1 : (window < 5 ? 0.1 : 12);
             if (debugVerbose) {
-                console.warn("[Warning]", `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
+                console.warn("[Warning]", (window < 0 ? "[[[Negative Time Window Error]]]" : ""), `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
             }
             next_max_date -= 60 * 60 * skip;
         }

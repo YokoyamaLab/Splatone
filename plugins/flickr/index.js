@@ -15,7 +15,7 @@ export default class FlickrPlugin extends PluginBase {
     }
     async yargv(yargv) {
         // 必須項目にすると、このプラグインを使用しない時も必須になります。
-        // 必須項目は作らず、initで例外を投げてください。
+        // 必須項目は作らず、もしプラグインを使う上での制約違反はinitで例外を投げてください。
         return yargv.option(this.argKey('APIKEY'), {
             group: 'For ' + this.id + ' Plugin',
             type: 'string',
@@ -45,9 +45,9 @@ export default class FlickrPlugin extends PluginBase {
             description: '利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)'
         }).option(this.argKey('Haste'), {
             group: 'For ' + this.id + ' Plugin',
-            default: false,
+            default: true,
             type: 'boolean',
-            description: '時間軸分割並列処理(実験中の機能)'
+            description: '時間軸分割並列処理'
         }).option(this.argKey('DateMax'), {
             group: 'For ' + this.id + ' Plugin',
             type: 'string',
