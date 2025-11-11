@@ -15,6 +15,7 @@ import { MessageChannel } from 'worker_threads';
 // -------------------------------
 // Third-party
 // -------------------------------
+import Bottleneck from 'bottleneck';
 import express from 'express';
 import open from 'open';
 import Piscina from 'piscina';
@@ -38,6 +39,10 @@ const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
 let pluginsOptions = {};
+const flickrLimiter = new Bottleneck({
+  maxConcurrent: 5,
+  minTime: 350, // 約3req/sec
+});
 
 try {
 
@@ -555,7 +560,7 @@ try {
     return { stats, progress, finish: (finish == 0) };
   };
 
-  async function runTask(taskName, data) {
+  async function runTask_(taskName, data) {
     const { port1, port2 } = new MessageChannel();
     const filename = resolveWorkerFilename(taskName); // ← file URL (href)
     // named export を呼ぶ場合は { name: "関数名" } を追加
@@ -607,6 +612,7 @@ try {
     port1.close();
     return rtn;
   }
+  const runTask = flickrLimiter.wrap(runTask_);
 
   const nParallel = Math.max(1, Math.min(12, os.cpus().length))
   const piscina = new Piscina({

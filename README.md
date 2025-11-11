@@ -13,6 +13,13 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## Change Log
 
+### v0.0.11 →　v0.0.12
+
+* Bottleneckを導入しクエリ間隔を適正値に調整 (3 queries/ 3 sec.)
+* 時間軸分割並列処理のデフォルト化
+  * 地理的分割に加えて大量の結果がある場所は時間軸でもクエリを分解する
+  * 無効にするときは```--no-p-flickr-Haste```を付与
+
 ### v0.0.10 →　v0.0.11 
 
 * 時間軸として使用する日付を選択可能に (```--p-flickr-DateMode```)
@@ -23,6 +30,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
     * デフォルト値:　```date_upload,date_taken,owner_name,geo,url_s,tags```
       * これらはコマンドライン引数での指定の有無に関わらず付与されます
 * 自動指定時のHexGridの最小サイズを0.5kmに
+* [Bug Fix] 時間軸並列機能のバグ修正
 
 ### v0.0.8 →　v0.0.9 →　v0.0.10 
 
@@ -59,15 +67,16 @@ Debug
       --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
 
 For flickr Plugin
-      --p-flickr-APIKEY   Flickr ServiceのAPI KEY                       [文字列]
-      --p-flickr-extras   カンマ区切り/保持する写真のメタデータ(デフォルト値は記
-                          載の有無に関わらず保持)
+      --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]
+      --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は
+                           記載の有無に関わらず保持)
        [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
-      --p-flickr-DateMode 利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
+      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
-      --p-flickr-DateMax  クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1762701683]
-      --p-flickr-DateMin  クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
+      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
+      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1762904780]
+      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
