@@ -22,6 +22,32 @@ export default class FlickrPlugin extends PluginBase {
             description: 'Flickr ServiceのAPI KEY'
         }).coerce(this.argKey('APIKEY'), opt => {
             return opt
+        }).option(this.argKey('Extras'), {
+            group: 'For ' + this.id + ' Plugin',
+            type: 'string',
+            default: 'date_upload,date_taken,owner_name,geo,url_s,tags',
+            description: 'カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持)'
+        }).coerce(this.argKey('Extras'), opt => {
+            const fields = ['description', 'license', 'date_upload', 'date_taken', 'owner_name', 'icon_server', 'original_format', 'last_update', 'geo', 'tags', 'machine_tags', 'o_dims', 'views', 'media', 'path_alias', 'url_sq', 'url_t', 'url_s', 'url_q', 'url_m', 'url_n', 'url_z', 'url_c', 'url_l', 'url_o'];
+            const extras = { 'date_upload': true, 'date_taken': true, 'owner_name': true, 'geo': true, 'url_s': true, 'tags': true };
+            opt.split(',').forEach(f => {
+                if (fields.includes(f)) {
+                    extras[f] = true;
+                } else {
+                    console.warn(`[${this.id} Warning] extras=${f}はリストに無いため無視されました。`);
+                }
+            });
+            return Object.keys(extras).join(",");
+        }).option(this.argKey('DateMode'), {
+            group: 'For ' + this.id + ' Plugin',
+            choices: ['upload', 'taken'],
+            default: "upload",
+            description: '利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)'
+        }).option(this.argKey('Haste'), {
+            group: 'For ' + this.id + ' Plugin',
+            default: false,
+            type: 'boolean',
+            description: '時間軸分割並列処理(実験中の機能)'
         }).option(this.argKey('DateMax'), {
             group: 'For ' + this.id + ' Plugin',
             type: 'string',
@@ -46,7 +72,6 @@ export default class FlickrPlugin extends PluginBase {
             if (Number.isFinite(num)) {
                 return Math.floor(num);  // 確実に整数に
             }
-
             throw new Error(`Invalid date/time format: ${opt} (YYYY-MM-DD または UNIX時間(秒)で指定してください)`);
         }).option(this.argKey('DateMin'), {
             group: 'For ' + this.id + ' Plugin',
@@ -108,17 +133,16 @@ export default class FlickrPlugin extends PluginBase {
         }
         const hexQuery = {};
         const ks = Object.keys(hexGrid.features);
-        await Promise.all(ks.map(async k => {
+        ks.map(k => {
             const item = hexGrid.features[k];
             hexQuery[item.properties.hexId] = {};
             const cks = Object.keys(categories);
-            await Promise.all(cks.map(ck => {
+            cks.map(ck => {
                 const tags = categories[ck];
                 //console.log("tag=",ck,"/",tags);
                 hexQuery[item.properties.hexId][ck] = { photos: [], tags, final: false };
-                this.api.emit('splatone:start', {
+                this.api.emit('splatone:start', { //WorkerOptions
                     plugin: this.id,
-                    //API_KEY: this.APIKEY ?? pluginOptions.APIKEY,
                     hex: item,
                     triangles: getTrianglesInHex(item, triangles),
                     bbox: bbox(item.geometry),
@@ -127,8 +151,8 @@ export default class FlickrPlugin extends PluginBase {
                     pluginOptions,
                     sessionId
                 });
-            }));
-        }));
+            });
+        });
         return `${this.id}, ${this.options.API_KEY}, ${hexGrid.features.length} bboxes processed.`;
     }
 }

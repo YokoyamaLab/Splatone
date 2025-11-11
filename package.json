@@ -1,6 +1,6 @@
 {
   "name": "splatone",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Multi-layer Composite Heatmap",
   "homepage": "https://github.com/YokoyamaLab/Splatone#readme",
   "bugs": {
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@turf/turf": "^7.2.0",
+    "bottleneck": "^2.19.5",
     "chroma-js": "^3.1.2",
     "ejs": "^3.1.10",
     "express": "^5.1.0",

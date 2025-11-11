@@ -8,8 +8,9 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import path, { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { existsSync, writeFileSync, constants } from 'node:fs';
+import fs, { existsSync, writeFileSync, constants } from 'node:fs';
 import { access, readdir, readFile } from 'node:fs/promises';
+import { MessageChannel } from 'worker_threads';
 
 // -------------------------------
 // Third-party
@@ -109,7 +110,11 @@ try {
   // コマンド例
   // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
   // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
-  // node crawler.js -p flickr -k "水辺=sea,ocean,beach,river,delta,lake,coast,creek|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|砂漠=desert,dune,outback,barren,wasteland" --vis-bulky --filed
+
+  // node crawler.js -p flickr -k "水辺=sea,ocean,beach,river,delta,lake,coast,creek|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|砂漠=desert,dune,outback,barren,wasteland" --vis-bulky --filed --p-flickr-Haste --p-flickr-DateMode=taken
+
+  // node crawler.js -p flickr -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky --p-flickr-Hates --p-flickr-DateMode=taken
+
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
@@ -188,6 +193,7 @@ try {
     pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
     return true;
   });
+
   const argv = await yargv.parseAsync();
 
   const visualizers = {};
@@ -311,7 +317,7 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
-        const optPlugin = {
+        const workerOptions = {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
@@ -319,7 +325,7 @@ try {
           pluginOptions: pluginsOptions[argv.plugin]
         };
         //console.log(optPlugin);
-        await plugins.call(argv.plugin, 'crawl', optPlugin);
+        await plugins.call(argv.plugin, 'crawl', workerOptions);
       }
       catch (e) {
         console.error(e);
@@ -337,11 +343,12 @@ try {
         let { bbox, drawn, cellSize = 0, units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
         const boundary = String(bbox).split(',').map(Number);
         if (cellSize == 0) {
-          //セルサイズ自動決定()
+          //セルサイズ自動決定
+          units = 'kilometers'
           //console.log("[cellSize?]",boundary,units);
           const { width, height } = bboxSize(boundary, units);
           //console.log("","w=",width,"/\th=",height);
-          cellSize = Math.max(width / (3 * 30), height / (30 * Math.sqrt(3)));
+          cellSize = Math.max(0.5, width / (3 * 30), height / (30 * Math.sqrt(3)));
           if (cellSize == 0) {
             cellSize = 1;
           }
@@ -549,63 +556,77 @@ try {
   };
 
   async function runTask(taskName, data) {
+    const { port1, port2 } = new MessageChannel();
     const filename = resolveWorkerFilename(taskName); // ← file URL (href)
     // named export を呼ぶ場合は { name: "関数名" } を追加
-    return piscina.run(data, { filename });
+    port1.on('message', (workerResults) => {
+      // ここでログ／WebSocket通知／DB書き込みなど何でもOK
+      const rtn = workerResults.results;
+      const workerOptions = workerResults.workerOptions;
+      const currentSessionId = workerOptions.sessionId;
+      processing[currentSessionId]--;
+      //console.log(rtn);
+      crawlers[currentSessionId][rtn.hexId] ??= {};
+      crawlers[currentSessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
+      crawlers[currentSessionId][rtn.hexId][rtn.category].ids ??= new Set();
+      const duplicates = ((A, B) => new Set([...A].filter(x => B.has(x))))(rtn.ids, crawlers[currentSessionId][rtn.hexId][rtn.category].ids);
+      crawlers[currentSessionId][rtn.hexId][rtn.category].ids = new Set([...crawlers[currentSessionId][rtn.hexId][rtn.category].ids, ...rtn.ids]);
+      crawlers[currentSessionId][rtn.hexId][rtn.category].final = rtn.final;
+      crawlers[currentSessionId][rtn.hexId][rtn.category].crawled ??= 0;
+      crawlers[currentSessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[currentSessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[currentSessionId][rtn.hexId][rtn.category].crawled;
+      crawlers[currentSessionId][rtn.hexId][rtn.category].crawled = crawlers[currentSessionId][rtn.hexId][rtn.category].ids.size;
+
+      if (rtn.photos.features.length >= 250 && rtn.photos.features.length == duplicates.size) {
+        console.error("ALL DUPLICATE");
+      }
+      if (argv.debugVerbose) {
+        console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[currentSessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[currentSessionId][rtn.hexId][rtn.category].total}`);
+      }
+      const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
+      crawlers[currentSessionId][rtn.hexId][rtn.category].items
+        = concatFC(crawlers[currentSessionId][rtn.hexId][rtn.category].items, photos);
+
+      const { stats, progress, finish } = statsItems(crawlers[currentSessionId], targets[currentSessionId]);
+      io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, progress });
+      if (!rtn.final) {
+        // 次回クロール用に更新
+        rtn.nextPluginOptions.forEach((nextPluginOptions) => {
+          const workerOptions_clone = structuredClone(workerOptions);
+          workerOptions_clone.pluginOptions = nextPluginOptions;
+          api.emit('splatone:start', workerOptions_clone);
+        });
+        //} else if (finish) {
+      } else if (processing[currentSessionId] == 0) {
+        if (argv.debugVerbose) {
+          console.table(stats);
+        }
+        api.emit('splatone:finish', workerOptions);
+      }
+    });
+    const rtn = await piscina.run({ debugVerbose: argv.debugVerbose, port: port2, ...data }, { filename, transferList: [port2] });
+    port1.close();
+    return rtn;
   }
 
-  const nParallel = Math.max(1, Math.min(6, os.cpus().length))
+  const nParallel = Math.max(1, Math.min(12, os.cpus().length))
   const piscina = new Piscina({
-    minThreads: 1,
+    minThreads: nParallel,
     maxThreads: nParallel,
-    idleTimeout: 10_000,
-    // 注意：ここで filename は渡さない。run 時に切り替える
-  });
-  await subscribe('splatone:start', async p => {
-    //console.log('[splatone:start]', p);
-    processing[p.sessionId] = (processing[p.sessionId] ?? 0) + 1;
-    let rtn = await runTask(p.plugin, p);
-    processing[p.sessionId]--;
-    //console.log('[splatone:done]', p.plugin, rtn.photos.features.length,"photos are collected in hex",rtn.hexId,"tags:",rtn.tags,"final:",rtn.final);
-    crawlers[p.sessionId][rtn.hexId] ??= {};
-    crawlers[p.sessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
-    crawlers[p.sessionId][rtn.hexId][rtn.category].ids ??= new Set();
-    const duplicates = ((A, B) => new Set([...A].filter(x => B.has(x))))(rtn.ids, crawlers[p.sessionId][rtn.hexId][rtn.category].ids);
-    crawlers[p.sessionId][rtn.hexId][rtn.category].ids = new Set([...crawlers[p.sessionId][rtn.hexId][rtn.category].ids, ...rtn.ids]);
-    crawlers[p.sessionId][rtn.hexId][rtn.category].final = rtn.final;
-    crawlers[p.sessionId][rtn.hexId][rtn.category].crawled ??= 0;
-    crawlers[p.sessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[p.sessionId][rtn.hexId][rtn.category].crawled;
-    crawlers[p.sessionId][rtn.hexId][rtn.category].crawled = crawlers[p.sessionId][rtn.hexId][rtn.category].ids.size;
-    
-    if (argv.debugVerbose) {
-      console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[p.sessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[p.sessionId][rtn.hexId][rtn.category].total}`);
-    }
-    const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
-    crawlers[p.sessionId][rtn.hexId][rtn.category].items
-      = concatFC(crawlers[p.sessionId][rtn.hexId][rtn.category].items, photos);
-
-    const { stats, progress, finish } = statsItems(crawlers[p.sessionId], targets[p.sessionId]);
-    io.to(p.sessionId).emit('progress', { hexId: rtn.hexId, progress });
-    if (!rtn.final) {
-      // 次回クロール用に更新
-      rtn.nextPluginOptions.forEach((nextPluginOptions) => {
-        const p_clone = structuredClone(p);
-        p_clone.pluginOptions = nextPluginOptions
-        api.emit('splatone:start', p_clone);
-      });
-      //} else if (finish) {
-    } else if (processing[p.sessionId] == 0) {
-      if (argv.debugVerbose) {
-        console.table(stats);
-      }
-      api.emit('splatone:finish', p);
-    }
+    idleTimeout: 10_000
   });
 
-  await subscribe('splatone:finish', async p => {
+  await subscribe('splatone:start', async workerOptions => {
+    //console.log('[splatone:start]', workerOptions);
+    const currentSessionId = workerOptions.sessionId;
+    processing[currentSessionId] = (processing[currentSessionId] ?? 0) + 1;
+    runTask(workerOptions.plugin, workerOptions);
+  });
+
+  await subscribe('splatone:finish', async workerOptions => {
+    const currentSessionId = workerOptions.sessionId;
     const resultId = uniqid();
-    const result = crawlers[p.sessionId];
-    const target = targets[p.sessionId];
+    const result = crawlers[currentSessionId];
+    const target = targets[currentSessionId];
     let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
 
     //console.log('[splatone:finish]');
@@ -613,7 +634,7 @@ try {
       if (argv.chopped || argv.filed) {
         throw new RangeError("Invalid string length");
       }
-      await io.to(p.sessionId).timeout(120000).emitWithAck('result', {
+      await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
         resultId,
         geoJson,
         palette: target["splatonePalette"],
@@ -626,7 +647,7 @@ try {
         if (argv.debugVerbose) {
           console.warn("[WARN] " + msg);
         }
-        io.to(p.sessionId).timeout(5000).emit('toast', {
+        io.to(currentSessionId).timeout(5000).emit('toast', {
           text: msg,
           class: "warning"
         });
@@ -638,7 +659,7 @@ try {
             if (path.length !== 0) {
               if (kind === "primitive" || kind === "null") {
                 //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
-                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
                   resultId,
                   path,
                   kind,
@@ -651,7 +672,7 @@ try {
                 if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
                   current_features++;
                 }
-                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
                   resultId,
                   path,
                   kind,
@@ -661,7 +682,7 @@ try {
                 //console.log("\tACK", ackrtn);
               } else if (kind === "array") {
                 //console.log(path.join("."), "=>", `(${kind}:${type})`);              
-                const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-chunk', {
+                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
                   resultId,
                   path,
                   kind,
@@ -679,7 +700,7 @@ try {
           try {
             const outPath = await saveGeoJsonObjectAsStream(geoJson, 'result.' + resultId + '.json');
             console.log('saved:', outPath);
-            const ackrtn = await io.to(p.sessionId).timeout(120000).emitWithAck('result-file', {
+            const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-file', {
               resultId,
             });
           } catch (err) {
@@ -687,7 +708,7 @@ try {
             process.exitCode = 1;
           }
         }
-        await io.to(p.sessionId).timeout(120000).emitWithAck('result', {
+        await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
           resultId,
           geoJson: null, /*geoJsonは送らない*/
           palette: target["splatonePalette"],
