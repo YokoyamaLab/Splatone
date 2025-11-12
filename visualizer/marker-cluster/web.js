@@ -1,7 +1,9 @@
 let booted = false;
-export default async function main(map, geojson, options = { palette: {} }) {
+export default async function main(map, geojson, options = { palette: {}, visOptions: {} }) {
     if (booted) return;
     booted = true;
+
+console.log("[VIS OPTIONS]",options.visOptions);
 
     const urls = [
         'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css',

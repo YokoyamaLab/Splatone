@@ -337,7 +337,8 @@
       };
       for (const vis in visualizers) {
         const layers = await visualizers[vis](map, res.geoJson[vis], {
-          palette: res.palette
+          palette: res.palette,
+          visOptions:res.visOptions[vis]
         });
         //console.log("【レイヤ】\n", JSON.stringify(layers,null,4));
         if ((layers == null)) {
