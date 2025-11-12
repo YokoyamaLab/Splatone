@@ -30,7 +30,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
-import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildPluginsOptions, loadAPIKey } from '#lib/splatone';
+import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildPluginsOptions, loadAPIKey, buildVisualizersOptions } from '#lib/splatone';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,6 +39,8 @@ const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
 let pluginsOptions = {};
+let visOptions = {};
+
 const flickrLimiter = new Bottleneck({
   maxConcurrent: 5,
   minTime: 350, // 約3req/sec
@@ -58,6 +60,7 @@ try {
     api,
     optionsById: {},
   });
+
   // Visualizer読み込み
   const all_visualizers = {};  // { [name: string]: class }
   // クラス判定の小ヘルパ
@@ -178,14 +181,20 @@ try {
   plugins.list().forEach(async (plug) => {
     yargv = await plugins.call(plug, "yargv", yargv);
   })
-  Object.keys(all_visualizers).forEach((vis) => {
+
+
+  const visualizers_ = {};
+  await Object.keys(all_visualizers).forEach(async (vis) => {
     yargv = yargv.option('vis-' + vis, {
       group: 'Visualization (最低一つの指定が必須です)',
       type: 'boolean',
       default: false,
       description: all_visualizers[vis].description
     })
+    visualizers_[vis] = new all_visualizers[vis]();
+    yargv = await visualizers_[vis].yargv(yargv);
   });
+
   yargv = yargv.check(async (argv, options) => {
     if (Object.keys(all_visualizers).filter(v => argv["vis-" + v]).length == 0) {
       throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
@@ -194,7 +203,9 @@ try {
       console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
       argv.chopped = false;
     }
-    pluginsOptions = buildPluginsOptions(argv, plugins.list())
+    pluginsOptions = buildPluginsOptions(argv, plugins.list());
+    visOptions = buildVisualizersOptions(argv, Object.keys(visualizers_));
+    //console.log(visOptions);
     pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
     return true;
   });
@@ -202,20 +213,10 @@ try {
   const argv = await yargv.parseAsync();
 
   const visualizers = {};
-  for (const vis of Object.keys(all_visualizers).filter(v => argv[`vis-${v}`])) {
-    visualizers[vis] = new all_visualizers[vis]();
+  for (const vis of Object.keys(visualizers_).filter(v => argv[`vis-${v}`])) {
+    visualizers[vis] = visualizers_[vis];
   }
 
-  /* const plugin_options = argv.options?.[argv.plugin] ?? {}
-  try {
-    plugin_options.API_KEY = await loadAPIKey("flickr") ?? plugin_options.API_KEY;
-  } catch (e) {
-    if (!plugin_options.API_KEY) {
-      console.error("Error loading API key:", e.message);
-    }
-    //Nothing to do
-  }*/
-  //pluginsOptions = buildPluginsOptions(argv, plugins.list());
   await plugins.call(argv.plugin, 'init', pluginsOptions[argv.plugin]);
   if (argv.debugVerbose) {
     console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
@@ -225,6 +226,7 @@ try {
   const processing = {};
   const crawlers = {};
   const targets = {};
+
   // 初期中心（凱旋門）
   const DEFAULT_CENTER = { lat: 48.873611, lon: 2.294444 };
 
@@ -633,7 +635,8 @@ try {
     const resultId = uniqid();
     const result = crawlers[currentSessionId];
     const target = targets[currentSessionId];
-    let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target)]));
+
+    let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])]));
 
     //console.log('[splatone:finish]');
     try {
@@ -645,7 +648,8 @@ try {
         geoJson,
         palette: target["splatonePalette"],
         visualizers: Object.keys(visualizers),
-        plugin: argv.plugin
+        plugin: argv.plugin,
+        visOptions
       });
     } catch (e) {
       if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
@@ -719,7 +723,8 @@ try {
           geoJson: null, /*geoJsonは送らない*/
           palette: target["splatonePalette"],
           visualizers: Object.keys(visualizers),
-          plugin: argv.plugin
+          plugin: argv.plugin,
+          visOptions
         });
         console.log("[Done]");
       } else {

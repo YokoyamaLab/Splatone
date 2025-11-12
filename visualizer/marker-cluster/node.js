@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
 
@@ -10,7 +12,9 @@ export default class MarkerClusterVisualizer extends VisualizerBase {
 
     constructor() {
         super();
+        this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がビジュアライザ名) 
     }
+
 
     concatFC(fcA, fcB) {
         return {
@@ -31,7 +35,7 @@ export default class MarkerClusterVisualizer extends VisualizerBase {
         });
         return { type: "FeatureCollection", features };
     }
-    getFutureCollection(result, target) {
+    getFutureCollection(result, target, visOptions) {
         //console.log(JSON.stringify(target, null, 4));
         const layers = {};
         for (const hex in result) {
