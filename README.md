@@ -13,13 +13,14 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## Change Log
 
-### v0.0.13 →　v0.0.14
+### v0.0.13 →　v0.0.14 →　v0.0.15 →　v0.0.16 →　v0.0.17
 * **[可視化モジュール]** ```--vis-majority-hex```追加
 * 結果の色固定機能追加 (キーワード指定方法を参照の事)
+* [Bug Fix] npxが起動しない事象の修正
 
 ### v0.0.12 →　v0.0.13
 * BulkyのPointMarkerのサイズや透明度を可変に
-  * コマンドライン引数で指定 (詳しくは``` npx -y -- splatone@latest crawler --help```)
+  * コマンドライン引数で指定 (詳しくは```  npx -y -p splatone@latest crawler --help```)
 
 [これ以前のログ](CHANGELOG.md)
 
@@ -32,7 +33,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 ## Helpの表示
 
 ```shell
-$ npx -y -- splatone@latest crawler --help
+$ npx -y -p splatone@latest crawler --help
 [app] [plugin] loaded: flickr@1.0.0
 使い方: crawler.js [options]
 
@@ -97,7 +98,7 @@ For marker-cluster Visualizer
       --version  バージョンを表示                                         [真偽]
 
 cold_@bimota-due MINGW64 /c/GitHub/Splatone (61-可視化メソッドmajorityhex)
-$ node crawler.js --help
+$ npx -y -p crawler@latest --help
 [app] [plugin] loaded: flickr@1.0.0
 使い方: crawler.js [options]
 
@@ -220,7 +221,7 @@ APIキーは以下の３種類の方法で与える事ができます
 #### コマンド例
 * クエリは海と山のキーワード検索。上記スクリーンショットは日本のデータ
 ```shell
-$ npx -y -- splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$  npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -241,7 +242,7 @@ $ npx -y -- splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vi
 #### コマンド例
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ npx -y -- splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -258,7 +259,7 @@ $ npx -y -- splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
 * 
 ```shell
-$ npx -y -- splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$  npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -320,17 +321,17 @@ seaだけでは集められるポストが限定されるので、同様の意�
 - 使い方（6色のカラーパレットを2セット作りたい）:
 
 ```bash
-npx -y -- splatone@latest color <count> <sets>
+ npx -y -psplatone@latest colors <count> <sets>
 # 例: 6色を3セット生成（ターミナルに色付きで表示）
-npx -y -- splatone@latest color 6 3
-```
+ npx -y -p splatone@latest colors 6 3
+``` 
 
 - オプション:
 
 - `--no-ansi` : ANSI カラーシーケンスを出力せず、プレーンなカンマ区切りの HEX を出力します（パイプやログ向け）。
 
 ```bash
-npx -y -- splatone@latest color --no-ansi 6 3
+ npx -y -p splatone@latest colors --no-ansi 6 3
 ```
 
 ## ダウンロード
