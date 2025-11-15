@@ -10,8 +10,14 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 - Bulky: クロールした全てのジオタグを小さな点で描画する
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
+- Majority Hex: HexGridの各セルをセル内で最頻出するカテゴリの色で彩色
+- Heat: ヒートマップ
 
 ## Change Log
+
+### v0.0.17 →　v0.0.18
+
+* **[可視化モジュール]** ```--vis-heat```追加
 
 ### v0.0.13 →　v0.0.14 →　v0.0.15 →　v0.0.16 →　v0.0.17
 * **[可視化モジュール]** ```--vis-majority-hex```追加
@@ -38,71 +44,6 @@ $ npx -y -p splatone@latest crawler --help
 使い方: crawler.js [options]
 
 Basic Options
-  -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]   
-  -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:   
-                       "nature,tree,flower|building,house|water,sea,river,pond"]   
-  -f, --filed     大きなデータをファイルとして送受信する
-                                                       [真偽] [デフォルト: true]   
-  -c, --chopped   大きなデータを細分化して送受信する
-                                             [非推奨] [真偽] [デフォルト: false]   
-
-Debug
-      --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]   
-
-For flickr Plugin
-      --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]   
-      --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は    
-                           記載の有無に関わらず保持)
-       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
-      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
-                    [選択してください: "upload", "taken"] [デフォルト: "upload"]
-      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
-      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763107393]
-      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1072882800]
-
-Visualization (最低一つの指定が必須です)
-      --vis-bulky           全データをCircleMarkerとして地図上に表示
-                                                      [真偽] [デフォルト: false]
-      --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
-                            apartiteモードで6分割パイチャート表示。透明度は全体
-                            で正規化。                [真偽] [デフォルト: false]
-      --vis-marker-cluster  マーカークラスターとして地図上に表示
-                                                      [真偽] [デフォルト: false]
-
-For bulky Visualizer
-      --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
-      --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
-      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]
-      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
-      --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
-      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
-
-For majority-hex Visualizer
-      --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
-                                                      [真偽] [デフォルト: false]
-      --v-majority-hex-HexOpacity   六角形の線の透明度    [数値] [デフォルト: 1]
-      --v-majority-hex-HexWeight    六角形の線の太さ      [数値] [デフォルト: 1]
-      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度
-                                                        [数値] [デフォルト: 0.9]
-      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度
-                                                        [数値] [デフォルト: 0.5]
-
-For marker-cluster Visualizer
-      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
-                                                         [数値] [デフォルト: 80]
-
-オプション:
-      --help     ヘルプを表示                                             [真偽]
-      --version  バージョンを表示                                         [真偽]
-
-cold_@bimota-due MINGW64 /c/GitHub/Splatone (61-可視化メソッドmajorityhex)
-$ npx -y -p crawler@latest --help
-[app] [plugin] loaded: flickr@1.0.0
-使い方: crawler.js [options]
-
-Basic Options
   -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
   -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
@@ -123,13 +64,15 @@ For flickr Plugin
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
       --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763107399]
+                                               [文字列] [デフォルト: 1763224757]
       --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
                                                       [真偽] [デフォルト: false]
+      --vis-heat            カテゴリ毎に異なるレイヤのヒートマップで可視化（色=
+                            カテゴリ色、透明度=頻度） [真偽] [デフォルト: false]
       --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
                             apartiteモードで6分割パイチャート表示。透明度は全体
                             で正規化。                [真偽] [デフォルト: false]
@@ -143,6 +86,13 @@ For bulky Visualizer
       --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
       --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
       --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
+
+For heat Visualizer
+      --v-heat-Radius      ヒートマップブラーの半径  [数値] [デフォルト: 0.0005]
+      --v-heat-MinOpacity  ヒートマップの最小透明度       [数値] [デフォルト: 0]
+      --v-heat-MaxOpacity  ヒートマップの最大透明度       [数値] [デフォルト: 1]
+      --v-heat-MaxValue    ヒートマップ強度の最大値
+                           (未指定時はデータから自動推定)                 [数値]
 
 For majority-hex Visualizer
       --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
@@ -162,7 +112,6 @@ For marker-cluster Visualizer
       --help     ヘルプを表示                                             [真偽]
       --version  バージョンを表示                                         [真偽]
 ```
-
 ## 最小コマンド例
 
 1. *plugin*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
@@ -176,7 +125,7 @@ For marker-cluster Visualizer
 ![](assets/screenshot_venice_simple.png?raw=true)
 
 ```bash
-$ npx -y -- splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 # 詳細説明
@@ -221,7 +170,7 @@ APIキーは以下の３種類の方法で与える事ができます
 #### コマンド例
 * クエリは海と山のキーワード検索。上記スクリーンショットは日本のデータ
 ```shell
-$  npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -244,12 +193,32 @@ $  npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --v
 ```shell
 $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
-
 #### コマンドライン引数
 
 | オプション                                | 説明                         | 型   | デフォルト |
 | :---------------------------------------- | :--------------------------- | :--- | :--------- |
 | ```--v-marker-cluster-MaxClusterRadius``` | クラスタを構成する範囲(半径) | 数値 | 80         |
+
+### Heat: ヒートマップ
+
+![](assets/screenshot_venice_heat.png?raw=true)
+
+#### コマンド例
+
+* クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
+ 
+```shell
+$ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-heat --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+#### コマンドライン引数
+
+| オプション                | 説明                                                   | 型   | デフォルト |
+| :------------------------ | :----------------------------------------------------- | :--- | :--------- |
+| ```--v-heat-Radius```     | ヒートマップブラーの半径                               | 数値 | 0.0005     |
+| ```--v-heat-MinOpacity``` | ヒートマップの最小透明度                               | 数値 | 0          |
+| ```--v-heat-MaxOpacity``` | ヒートマップの最大透明度                               | 数値 | 1          |
+| ```--v-heat-MaxValue```   | ヒートマップ強度の最大値(未指定時はデータから自動推定) | 数値 |            |
 
 ### Majority Hex: Hexグリッド内の出現頻度に応じた彩色
 
@@ -259,7 +228,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
 * 
 ```shell
-$  npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -321,17 +290,17 @@ seaだけでは集められるポストが限定されるので、同様の意�
 - 使い方（6色のカラーパレットを2セット作りたい）:
 
 ```bash
- npx -y -psplatone@latest colors <count> <sets>
+npx -y -p splatone@latest color <count> <sets>
 # 例: 6色を3セット生成（ターミナルに色付きで表示）
- npx -y -p splatone@latest colors 6 3
-``` 
+npx -y -p splatone@latest color 6 3
+```
 
 - オプション:
 
 - `--no-ansi` : ANSI カラーシーケンスを出力せず、プレーンなカンマ区切りの HEX を出力します（パイプやログ向け）。
 
 ```bash
- npx -y -p splatone@latest colors --no-ansi 6 3
+npx -y -p splatone@latest color --no-ansi 6 3
 ```
 
 ## ダウンロード
