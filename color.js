@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import paletteGenerator from './lib/paletteGenerator.js';
 
 // Usage: node color.js <count> <sets>

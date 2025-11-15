@@ -1,6 +1,6 @@
 {
   "name": "splatone",
-  "version": "0.0.14",
+  "version": "0.0.18",
   "description": "Multi-layer Composite Heatmap",
   "homepage": "https://github.com/YokoyamaLab/Splatone#readme",
   "bugs": {
@@ -16,7 +16,7 @@
   "main": "index.js",
   "bin": {
     "crawler": "./crawler.js",
-    "color": "./color.js"
+    "colors": "./color.js"
   },
   "imports": {
     "#lib/*": "./lib/*.js"
