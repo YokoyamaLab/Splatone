@@ -18,7 +18,7 @@ export default class BulkyVisualizer extends VisualizerBase {
         return yargv.option(this.argKey('Radius'), {
             group: 'For ' + this.id + ' Visualizer',
             type: 'number',
-            description: 'Point Markerの直径',
+            description: 'Point Markerの半径',
             default: 5
         }).option(this.argKey('Stroke'), {
             group: 'For ' + this.id + ' Visualizer',

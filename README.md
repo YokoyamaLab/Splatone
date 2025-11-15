@@ -13,34 +13,13 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## Change Log
 
+### v0.0.13 →　v0.0.14
+* **[可視化モジュール]** ```--vis-majority-hex```追加
+* 結果の色固定機能追加 (キーワード指定方法を参照の事)
+
 ### v0.0.12 →　v0.0.13
 * BulkyのPointMarkerのサイズや透明度を可変に
   * コマンドライン引数で指定 (詳しくは``` npx -y -- splatone@latest crawler --help```)
-
-### v0.0.11 →　v0.0.12
-
-* Bottleneckを導入しクエリ間隔を適正値に調整 (3 queries/ 3 sec.)
-* 時間軸分割並列処理のデフォルト化
-  * 地理的分割に加えて大量の結果がある場所は時間軸でもクエリを分解する
-  * 無効にするときは```--no-p-flickr-Haste```を付与
-
-### v0.0.10 →　v0.0.11 
-
-* 時間軸として使用する日付を選択可能に (```--p-flickr-DateMode```)
-  * upload: Flickrにアップロードされたタイムスタンプを遡ってクローリング (デフォルト)
-  * taken: 写真の撮影日時を遡ってクローリング
-* extrasを指定可能に (```--p-flickr-Extras```)
-    * https://www.flickr.com/services/api/explore/flickr.photos.search
-    * デフォルト値:　```date_upload,date_taken,owner_name,geo,url_s,tags```
-      * これらはコマンドライン引数での指定の有無に関わらず付与されます
-* 自動指定時のHexGridの最小サイズを0.5kmに
-* [Bug Fix] 時間軸並列機能のバグ修正
-
-### v0.0.8 →　v0.0.9 →　v0.0.10 
-
-* 【重要】**APIキー**の指定方法が変わりました。
-  * ```--p-flickr-APIKEY```オプションを使います。
-* クエリを時間方向でも分割し効率化しました。(使い方に変更はありません)
 
 [これ以前のログ](CHANGELOG.md)
 
@@ -59,7 +38,6 @@ $ npx -y -- splatone@latest crawler --help
 
 Basic Options
   -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]   
-  -o, --options   プラグインオプション               [文字列] [デフォルト: "{}"]   
   -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:   
                        "nature,tree,flower|building,house|water,sea,river,pond"]   
   -f, --filed     大きなデータをファイルとして送受信する
@@ -74,57 +52,150 @@ For flickr Plugin
       --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]   
       --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は    
                            記載の有無に関わらず保持)
-       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]   
-      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)    
-                    [選択してください: "upload", "taken"] [デフォルト: "upload"]   
-      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]   
-      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD      
-                                               [文字列] [デフォルト: 1762942310]   
-      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD      
-                                               [文字列] [デフォルト: 1072882800]   
+       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
+      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
+                    [選択してください: "upload", "taken"] [デフォルト: "upload"]
+      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
+      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1763107393]
+      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
-                                                      [真偽] [デフォルト: false]   
+                                                      [真偽] [デフォルト: false]
+      --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
+                            apartiteモードで6分割パイチャート表示。透明度は全体
+                            で正規化。                [真偽] [デフォルト: false]
       --vis-marker-cluster  マーカークラスターとして地図上に表示
-                                                      [真偽] [デフォルト: false]   
+                                                      [真偽] [デフォルト: false]
 
 For bulky Visualizer
-      --v-bulky-Radius       Point Markerの直径           [数値] [デフォルト: 5]   
-      --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]   
-      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]   
-      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]   
-      --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]   
-      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]   
+      --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
+      --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
+      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]
+      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
+      --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
+      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
+
+For majority-hex Visualizer
+      --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
+                                                      [真偽] [デフォルト: false]
+      --v-majority-hex-HexOpacity   六角形の線の透明度    [数値] [デフォルト: 1]
+      --v-majority-hex-HexWeight    六角形の線の太さ      [数値] [デフォルト: 1]
+      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度
+                                                        [数値] [デフォルト: 0.9]
+      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度
+                                                        [数値] [デフォルト: 0.5]
+
+For marker-cluster Visualizer
+      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
+                                                         [数値] [デフォルト: 80]
 
 オプション:
-      --help     ヘルプを表示                                             [真偽]   
-      --version  バージョンを表示                                         [真偽]   
+      --help     ヘルプを表示                                             [真偽]
+      --version  バージョンを表示                                         [真偽]
 
+cold_@bimota-due MINGW64 /c/GitHub/Splatone (61-可視化メソッドmajorityhex)
+$ node crawler.js --help
+[app] [plugin] loaded: flickr@1.0.0
+使い方: crawler.js [options]
+
+Basic Options
+  -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
+  -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:
+                       "nature,tree,flower|building,house|water,sea,river,pond"]
+  -f, --filed     大きなデータをファイルとして送受信する
+                                                       [真偽] [デフォルト: true]
+  -c, --chopped   大きなデータを細分化して送受信する
+                                             [非推奨] [真偽] [デフォルト: false]
+
+Debug
+      --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
+
+For flickr Plugin
+      --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]
+      --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は
+                           記載の有無に関わらず保持)
+       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
+      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
+                    [選択してください: "upload", "taken"] [デフォルト: "upload"]
+      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
+      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1763107399]
+      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1072882800]
+
+Visualization (最低一つの指定が必須です)
+      --vis-bulky           全データをCircleMarkerとして地図上に表示
+                                                      [真偽] [デフォルト: false]
+      --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
+                            apartiteモードで6分割パイチャート表示。透明度は全体
+                            で正規化。                [真偽] [デフォルト: false]
+      --vis-marker-cluster  マーカークラスターとして地図上に表示
+                                                      [真偽] [デフォルト: false]
+
+For bulky Visualizer
+      --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
+      --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
+      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]
+      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
+      --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
+      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
+
+For majority-hex Visualizer
+      --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
+                                                      [真偽] [デフォルト: false]
+      --v-majority-hex-HexOpacity   六角形の線の透明度    [数値] [デフォルト: 1]
+      --v-majority-hex-HexWeight    六角形の線の太さ      [数値] [デフォルト: 1]
+      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度
+                                                        [数値] [デフォルト: 0.9]
+      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度
+                                                        [数値] [デフォルト: 0.5]
+
+For marker-cluster Visualizer
+      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
+                                                         [数値] [デフォルト: 80]
+
+オプション:
+      --help     ヘルプを表示                                             [真偽]
+      --version  バージョンを表示                                         [真偽]
 ```
-## クローリングの実行
 
-- 以下のサンプルコマンドを参考に実行してください。
-  - **FlickrのAPIキーは自身のに置き換える事**
-- ブラウザが立ち上がるので地図上でポリゴンあるいは矩形で領域選択し、実行ボタンを押すとクロールが開始されます。
-  - 指定した範囲を内包するHexGrid(六角形グリッド)が生成され、その内側のみが収集されます。
-- 結果が表示された後、結果をGeoJSON形式でダウンロードできます。
+## 最小コマンド例
 
-### 事例１)　商業施設・飲食施設・文化施設・公園の分類
-```shell
-$ node crawler.js -p flickr -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+1. *plugin*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
+  * plugin: flickr
+  * visualizer: bulky
+  * キーワード: canal,river|street,alley|bridge
+1. コマンドを実行するとWebブラウザで地図表示されるので、地図上の任意の位置に矩形あるいはポリゴンを描く
+  * 例えばベネチア
+2. Start Crawlingボタンをクリックしクローリング開始
+
+![](assets/screenshot_venice_simple.png?raw=true)
+
+```bash
+$ npx -y -- splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
-- オプションの **--vis-bulky** を **--vis-marker-cluster** に変更する事でマーカークラスターで可視化できます。
-
-### 事例２）水路・陸路・ランドマーク等の分類
-```shell
-$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-```
-- ベネチア等の水路のある町でやると面白いです
 
 # 詳細説明
 
-## Flickr APIキーの与え方
+## Plugin (クローラー)
+
+### Flickr: Flickrのジオタグ付き写真を取得するクローラー
+
+#### コマンドライン引数
+
+| オプション                | 説明                                                                          | 型             | デフォルト   |
+| :------------------------ | :---------------------------------------------------------------------------- | :------------- | :----------- |
+| ```--p-flickr-APIKEY```   | Flickr ServiceのAPI KEY                                                       | 文字列         |              |
+| ```--p-flickr-Extras```   | カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持) | 文字列         | date_upload  |,date_taken,owner_name,geo,url_s,tags
+| ```--p-flickr-DateMode``` | 利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)                          | 選択: "upload" | "taken"      |,"upload"
+| ```--p-flickr-Haste```    | 時間軸分割並列処理                                                            | 真偽           | true         |
+| ```--p-flickr-DateMax```  | クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | (動的)現時刻 |
+| ```--p-flickr-DateMin```  | クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | 1072882800   |
+
+#### Flickr APIキーの与え方
 
 APIキーは以下の３種類の方法で与える事ができます
 - ```--option```に含める
@@ -134,34 +205,74 @@ APIキーは以下の３種類の方法で与える事ができます
 - 環境変数で渡す
   - ```API_KEY_plugin```という環境変数に格納する
   - コマンドに毎回含めなくて良くなる。
-  - **flickr**の場合は```API_KEY_flickr```になります。
-    - ```plugin```はプラグイン名(flickr等)に置き換えてください。
-  - 一時的な環境変数を定義する事も可能です。(bash等)
-    - ```API_KEY_flickr="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" node crawler.js -p flickr -k "sea,ocean|mountain,mount" --vis-bulky```
 - ファイルで渡す(npxでは不可)
   - ルートディレクトリに```.API_KEY.plugin```というファイルを作成し保存
     - ```plugin```はプラグイン名(flickr等)に置き換えてください。
   - **flickr**の場合は```.API_KEY.flickr```になります。
   - optionや環境変数で与えるよりも優先されます。
 
-## Visualizer (可視化ツール)
+## Visualizer (可視化モジュール)
 
 ### Bulky: 全ての点を地図上にポイントする
 
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_venice_bulky.png?raw=true)
+![](assets/screenshot_sea-mountain_bulky.png?raw=true)
 
-* クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
+#### コマンド例
+* クエリは海と山のキーワード検索。上記スクリーンショットは日本のデータ
 ```shell
-$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -- splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
+
+#### コマンドライン引数
+
+| オプション                  | 説明                       | 型   | デフォルト |
+| :-------------------------- | :------------------------- | :--- | :--------- |
+| ```--v-bulky-Radius```      | Point Markerの半径         | 数値 | 5          |
+| ```--v-bulky-Stroke```      | Point Markerの線の有無     | 真偽 | true       |
+| ```--v-bulky-Weight```      | Point Markerの線の太さ     | 数値 | 1          |
+| ```--v-bulky-Opacity```     | Point Markerの線の透明度   | 数値 | 1          |
+| ```--v-bulky-Filling```     | Point Markerの塗りの有無   | 真偽 | true       |
+| ```--v-bulky-FillOpacity``` | Point Markerの塗りの透明度 | 数値 | 0.5        |
+
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_venice_marker-cluster.png?raw=true)
+![](assets/screenshot_venice_marker-cluster.png?raw=true)
 
+#### コマンド例
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
-$ node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -- splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
+
+#### コマンドライン引数
+
+| オプション                                | 説明                         | 型   | デフォルト |
+| :---------------------------------------- | :--------------------------- | :--- | :--------- |
+| ```--v-marker-cluster-MaxClusterRadius``` | クラスタを構成する範囲(半径) | 数値 | 80         |
+
+### Majority Hex: Hexグリッド内の出現頻度に応じた彩色
+
+![](assets/screenshot_florida_hex_majorityr.png?raw=true)
+
+#### コマンド例
+* クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
+* 
+```shell
+$ npx -y -- splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+#### コマンドライン引数
+
+| オプション                            | 説明                                       | 型   | デフォルト |
+| :------------------------------------ | :----------------------------------------- | :--- | :--------- |
+| ```--v-majority-hex-Hexapartite```    | 中のカテゴリの頻度に応じて六角形を分割色彩 | 真偽 | false      |
+| ```--v-majority-hex-HexOpacity=1```   | 六角形の線の透明度                         | 数値 | 1          |
+| ```--v-majority-hex-HexWeight=1```    | 六角形の線の太さ                           | 数値 | 1          |
+| ```--v-majority-hex-MaxOpacity=0.9``` | 正規化後の最大塗り透明度                   | 数値 | 0.9        |
+| ```--v-majority-hex-MinOpacity=0.3``` | 正規化後の最小塗り透明度                   | 数値 | 0.5        |
+
+* ```--v-majority-hex-Hexapartite```を指定すると各Hexセルを六分割の荒いPie Chartとして中のカテゴリ頻度に応じて彩色します。
+
 ## キーワード指定方法
 
 ### 比較キーワードの指定
@@ -188,30 +299,59 @@ seaだけでは集められるポストが限定されるので、同様の意�
 -k "海域=sea,ocean|山岳=mountain,mount"
 ```
 
-### 実行例 (海岸線と山岳の分布)
+### カテゴリ毎の色指定
 
-```shell
-$ node crawler.js -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+カテゴリの内容に合わせた色を指定したい場合はコマンドライン引数にて行えます。例えば海域を青に、山岳を緑にしたい場合は、カテゴリ名に続けて**#RRGGBB**で指定します。
+
 ```
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/screenshot_sea-mountain_bulky.png?raw=true)
+-k "海域#037dfc=sea,ocean|山岳#7fc266=mountain,mount"
+```
 
+色を簡単に探すための小さなコマンドが付属しています。
+
+#### 色セット生成ツール(color.js)の使い方
+
+このリポジトリには、コマンドラインで色のセットを生成する小さなユーティリティ `color.js` が含まれています。用途は以下の通りです。
+
+- 指定した数のカラーパレット（セット）を生成する
+- ターミナル上で色サンプルを ANSI Truecolor で確認する
+- プレーンなカンマ区切り HEX リストを出力して他ツールに渡す
+
+- 使い方（6色のカラーパレットを2セット作りたい）:
+
+```bash
+npx -y -- splatone@latest color <count> <sets>
+# 例: 6色を3セット生成（ターミナルに色付きで表示）
+npx -y -- splatone@latest color 6 3
+```
+
+- オプション:
+
+- `--no-ansi` : ANSI カラーシーケンスを出力せず、プレーンなカンマ区切りの HEX を出力します（パイプやログ向け）。
+
+```bash
+npx -y -- splatone@latest color --no-ansi 6 3
+```
 
 ## ダウンロード
 
 ### 画像のダウンロード
 
 * 結果の地図を画像(PNG形式)としてダウンロードするには、画面右下のアイコンをクリックしてください。
+  * 注意: 画像には凡例が含まれません 
 
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/icon_image_download.png?raw=true)
+![](assets/icon_image_download.png?raw=true)
 
 ### データのダウンロード
 
 * クロール結果をデータとしてダウンロードしたい場合は凡例の下にあるエクスポートボタンをクリックしてください。
+  * 指定したビジュアライザ毎にFeature Collectionとして結果が格納されます。
+  * クローリングしたデータそのものが欲しい場合はBulky等、単純なビジュアライザを指定してください。
 
-![](https://github.com/YokoyamaLab/Splatone/blob/main/assets/icon_data_export.png?raw=true)
+![](assets/icon_data_export.png?raw=true)
 
 ### 広範囲なデータ収集例
 
-* あまりにも大きいとFlickrから一時的にBANされることがありますので注意してください。
+* クエリ数はおおよそ1 query/secに調整されますので、時間はかかりますが大量のデータを収集する事も可能です。
 
 ![](/assets/screenshot_massive_points_bulky.png)
