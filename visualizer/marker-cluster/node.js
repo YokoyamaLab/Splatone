@@ -14,7 +14,16 @@ export default class MarkerClusterVisualizer extends VisualizerBase {
         super();
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がビジュアライザ名) 
     }
-
+    async yargv(yargv) {
+        // 必須項目にすると、このプラグインを使用しない時も必須になります。
+        // 必須項目は作らず、もしプラグインを使う上での制約違反はinitで例外を投げてください。
+        return yargv.option(this.argKey('MaxClusterRadius'), {
+            group: 'For ' + this.id + ' Visualizer',
+            type: 'number',
+            description: 'クラスタを構成する範囲(半径)',
+            default: 80
+        });
+    }
 
     concatFC(fcA, fcB) {
         return {

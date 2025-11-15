@@ -30,6 +30,7 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 import { loadPlugins } from './lib/pluginLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
+import chroma from 'chroma-js';
 import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildPluginsOptions, loadAPIKey, buildVisualizersOptions } from '#lib/splatone';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -116,12 +117,13 @@ try {
     express.static(resolve(VIZ_BASE, name, 'public'))(req, res, next);
   });
   // コマンド例
-  // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術 館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
-  // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey,temple,shrine" --vis-bulky
+  // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
 
-  // node crawler.js -p flickr -k "水辺=sea,ocean,beach,river,delta,lake,coast,creek|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|砂漠=desert,dune,outback,barren,wasteland" --vis-bulky --filed --p-flickr-Haste --p-flickr-DateMode=taken
+  // node crawler.js -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-bulky
 
-  // node crawler.js -p flickr -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky --p-flickr-Hates --p-flickr-DateMode=taken
+  // node crawler.js -p flickr -k "水辺=sea,ocean,beach,river,delta,lake,coast,creek|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|砂漠=desert,dune,outback,barren,wasteland" --vis-bulky
+
+  // node crawler.js -p flickr -k "商業=shop,souvenir,market,supermarket,pharmacy,drugstore,store,department,kiosk,bazaar,bookstore,cinema,showroom|飲食=bakery,food,drink,restaurant,cafe,bar,beer,wine,whiskey|文化施設=museum,gallery,theater,concert,library,monument,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
 
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
@@ -132,13 +134,6 @@ try {
       choices: plugins.list(),
       demandOption: true,
       describe: '実行するプラグイン',
-      type: 'string'
-    })
-    .option('options', {
-      group: 'Basic Options',
-      alias: 'o',
-      default: '{}',
-      describe: 'プラグインオプション',
       type: 'string'
     })
     .option('keywords', {
@@ -173,10 +168,12 @@ try {
     })
     .version()
     .coerce({
+      /*
       options: ((name) => (v) => {
         try { return JSON.parse(v); }
         catch (e) { throw new Error(`--${name}: JSON エラー: ${e.message}`); }
       })()
+      */
     });
   plugins.list().forEach(async (plug) => {
     yargv = await plugins.call(plug, "yargv", yargv);
@@ -384,12 +381,27 @@ try {
         }
 
         //カテゴリ生成
+        // キーにカラー指定が含まれている場合 (例: "水域#ff0000=canal,river") は
+        // カラー部分をキー名から取り除き、表示用の純粋なラベルをキーとして返す。
+        // 明示色があれば explicitColors に記録しておき、後でパレット生成時に利用する。
+        const explicitColors = {};
         const categorize = (tags) => {
           let cats = {};
           tags.split('|').forEach((tag_set, i) => {
             const key_val = tag_set.split("=", 2);
-            const key = (key_val.length == 1) ? key_val[0].split(",")[0] : key_val[0];
+            // key_raw は元のキー（色コードを含む可能性あり）
+            const key_raw = (key_val.length == 1) ? key_val[0].split(",")[0] : key_val[0];
             const val = (key_val.length == 1) ? key_val[0] : key_val[1];
+            // カラー指定を抽出してキー名から除去
+            const hexMatch = String(key_raw).match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
+            let key = key_raw;
+            if (hexMatch) {
+              const explicit = hexMatch[0];
+              // display label から色コードを除去してトリム
+              key = key_raw.replace(explicit, '').trim();
+              // store explicit color for this cleaned key
+              explicitColors[key] = explicit;
+            }
             cats[key] = val;
           });
           return cats;
@@ -413,12 +425,22 @@ try {
         // Sort colors by differenciation first
         const palette = paletteGenerator.diffSort(colors, 'Default');
         const splatonePalette = Object.fromEntries(Object.entries(categories).map(([k, v]) => {
-          const color = palette.pop()
-          const colors = {
-            "color": color.hex(),
-            "darken": color.darken(2).hex(),
-            "brighten": color.brighten(2).hex()
+          // explicitColors にあればその色を使う（キーは既に色コードを取り除いた表示名）
+          if (explicitColors.hasOwnProperty(k)) {
+            const explicit = explicitColors[k];
+            const colors = {
+              color: chroma(explicit).hex(),
+              darken: chroma(explicit).darken(2).hex(),
+              brighten: chroma(explicit).brighten(2).hex()
+            };
+            return [k, colors];
           }
+          const color = palette.pop();
+          const colors = {
+            color: color.hex(),
+            darken: color.darken(2).hex(),
+            brighten: color.brighten(2).hex()
+          };
           return [k, colors];
         }));
 
