@@ -3,6 +3,38 @@ import { point, featureCollection } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { toUnixSeconds } from '#lib/splatone';
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithRetry(fetcher, { maxAttempts = 4, baseDelayMs = 500 } = {}) {
+    let attempt = 0;
+    let lastError = null;
+    while (attempt < maxAttempts) {
+        try {
+            return await fetcher();
+        } catch (err) {
+            lastError = err;
+            const transient = isTransientNetworkError(err);
+            attempt++;
+            if (!transient || attempt >= maxAttempts) {
+                throw lastError;
+            }
+            const waitMs = baseDelayMs * Math.pow(2, attempt - 1);
+            console.warn(`[flickr worker] fetch attempt ${attempt} failed (${err?.cause?.code || err?.message}). Retrying in ${waitMs}ms.`);
+            await delay(waitMs);
+        }
+    }
+    throw lastError ?? new Error('Unknown Flickr fetch error');
+}
+
+function isTransientNetworkError(err) {
+    const code = err?.cause?.code ?? err?.code;
+    if (!code && typeof err?.message === 'string' && err.message.includes('fetch failed')) {
+        return true;
+    }
+    const transientCodes = new Set(['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE']);
+    return transientCodes.has(code);
+}
+
 export default async function ({
     port,
     debugVerbose,
@@ -16,27 +48,33 @@ export default async function ({
     sessionId
 }) {
     debugVerbose = true;
-    //console.log("{PLUGIN}", pluginOptions);
-    const { flickr } = createFlickr(pluginOptions["APIKEY"]);
-    if (!pluginOptions.TermId) {
-        //初期TermId
-        pluginOptions.TermId = 'a';
-    }
-    const baseParams = {
-        bbox: bbox.join(','),
-        tags: tags,
-        extras: pluginOptions["Extras"],
-        sort: pluginOptions["DateMode"] == "upload" ? "date-posted-desc" : "date-taken-desc"
+
+    const respond = (payload) => {
+        const safePayload = JSON.parse(JSON.stringify(payload));
+        port.postMessage(safePayload);
     };
-    baseParams[pluginOptions["DateMode"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = pluginOptions["DateMax"];
-    baseParams[pluginOptions["DateMode"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = pluginOptions["DateMin"];
-    //console.log("[baseParams]",baseParams);
-    const res = await flickr("flickr.photos.search", {
-        ...baseParams,
-        has_geo: 1,
-        per_page: 250,
-        page: 1,
-    });
+
+    try {
+        const { flickr } = createFlickr(pluginOptions["APIKEY"]);
+        if (!pluginOptions.TermId) {
+            //初期TermId
+            pluginOptions.TermId = 'a';
+        }
+        const baseParams = {
+            bbox: bbox.join(','),
+            tags: tags,
+            extras: pluginOptions["Extras"],
+            sort: pluginOptions["DateMode"] == "upload" ? "date-posted-desc" : "date-taken-desc"
+        };
+        baseParams[pluginOptions["DateMode"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = pluginOptions["DateMax"];
+        baseParams[pluginOptions["DateMode"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = pluginOptions["DateMin"];
+        //console.log("[baseParams]",baseParams);
+        const res = await fetchWithRetry(() => flickr("flickr.photos.search", {
+            ...baseParams,
+            has_geo: 1,
+            per_page: 250,
+            page: 1,
+        }));
     //console.log(res);
     const ids = [];
     const authors = {};
@@ -127,30 +165,49 @@ export default async function ({
             }
         }
     }
-    port.postMessage({
-        workerOptions: {
-            plugin,
-            hex,
-            triangles,
-            bbox,
-            category,
-            tags,
-            pluginOptions,
+        const payload = {
+            results: {
+                photos,
+                hexId: hex.properties.hexId,
+                tags,
+                category,
+                nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
+                total: res.photos.total,
+                outside: outside,
+                ids,
+                final: nextPluginOptionsDelta.length == 0//res.photos.photo.length == res.photos.total
+            }
+        };
+
+        respond(payload);
+        return true;
+    } catch (err) {
+        console.error('[flickr worker] Fatal error', {
             sessionId,
-        },
-        results: {
-            photos,
-            hexId: hex.properties.hexId,
-            tags,
+            hexId: hex?.properties?.hexId,
             category,
-            nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
-            total: res.photos.total,
-            outside: outside,
-            ids,
-            final: nextPluginOptionsDelta.length == 0//res.photos.photo.length == res.photos.total
-        }
-    });
-    return true;
+            reason: err?.message,
+            code: err?.cause?.code || err?.code || null
+        });
+        respond({
+            results: {
+                photos: featureCollection([]),
+                hexId: hex?.properties?.hexId ?? null,
+                tags,
+                category,
+                nextPluginOptions: [],
+                total: 0,
+                outside: 0,
+                ids: [],
+                final: true,
+                error: {
+                    message: err?.message,
+                    code: err?.cause?.code || err?.code || null
+                }
+            }
+        });
+        return false;
+    }
     return {
         photos,
         hexId: hex.properties.hexId,

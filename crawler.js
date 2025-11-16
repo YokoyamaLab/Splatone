@@ -43,8 +43,8 @@ let pluginsOptions = {};
 let visOptions = {};
 
 const flickrLimiter = new Bottleneck({
-  maxConcurrent: 5,
-  minTime: 350, // 約3req/sec
+  maxConcurrent: 6,
+  minTime: 700, 
 });
 
 try {
@@ -260,10 +260,30 @@ try {
   }
 
   function concatFC(fc1, fc2) {
-    return featureCollection([
-      ...(fc1?.features ?? []),
-      ...(fc2?.features ?? []),
-    ]);
+    const hasSource = Array.isArray(fc2?.features) && fc2.features.length > 0;
+    if (!fc1 || !Array.isArray(fc1.features)) {
+      return hasSource ? featureCollection([...fc2.features]) : featureCollection([]);
+    }
+    if (!hasSource) {
+      return fc1;
+    }
+    fc1.features.push(...fc2.features);
+    return fc1;
+  }
+
+  function formatBytesToMB(bytes) {
+    return (bytes / (1024 * 1024)).toFixed(1);
+  }
+
+  function logHeapUsage(label = 'heap') {
+    try {
+      const { rss, heapUsed, heapTotal, external } = process.memoryUsage();
+      console.log(
+        `[memory] ${label}: heapUsed=${formatBytesToMB(heapUsed)} MB / heapTotal=${formatBytesToMB(heapTotal)} MB / rss=${formatBytesToMB(rss)} MB / external=${formatBytesToMB(external)} MB`
+      );
+    } catch (err) {
+      console.warn('[memory] Failed to read usage stats:', err?.message || err);
+    }
   }
   /**
    * /api/hexgrid
@@ -304,11 +324,14 @@ try {
     crawlers[sessionId] = {};
     socket.join(sessionId);
 
+    const disposeSession = () => {
+      delete crawlers[sessionId];
+      delete targets[sessionId];
+      delete processing[sessionId];
+    };
+
     socket.on("disconnecting", () => {
-      if (socket.rooms && crawlers.hasOwnProperty(socket.rooms)) {
-        //console.log("delete session:", socket.rooms);
-        delete crawlers[socket.rooms];
-      }
+      disposeSession();
       //console.log("disconnected:", socket.id);
     });
 
@@ -497,7 +520,7 @@ try {
         }
 
         // 交差隣接（共有辺で、かつ他Hexの三角形）を付与
-        const triIndex = new Map(triFeatures.map(t => [t.properties.triangleId, t]));
+  const triIndex = new Map(triFeatures.map(t => [t.properties.triangleId, t]));
         for (const list of edgeToTriangles.values()) {
           if (list.length < 2) continue; // 共有していなければ隣接なし
           // 同じ辺を共有する全三角形同士で、異なるHexのものを相互に登録
@@ -525,7 +548,13 @@ try {
 
         //console.log(JSON.stringify(hexFC, null, 2));
         //res.json({ hex: hexFC, triangles: trianglesFC });
-        targets[sessionId] = { hex: hexFC, triangles: trianglesFC, categories, splatonePalette, };
+        const inflight = processing[sessionId] ?? 0;
+        if (inflight > 0) {
+          console.warn(`[session ${sessionId}] target reinitialized with ${inflight} tasks still running. Resetting session state.`);
+        }
+        crawlers[sessionId] = {};
+        processing[sessionId] = 0;
+    targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
         socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
       } catch (e) {
         console.error(e);
@@ -553,81 +582,117 @@ try {
     return resolvedWorkerFilename[taskName];
   }
 
-  const statsItems = (crawler, target,) => {
-    const stats = [];
-    const total = [];
-    const crawled = [];
+  const statsItems = (crawler, target) => {
     const progress = [];
-    let finish = Object.keys(target.categories).length * target.hex.features.length;
+    const categoryCount = Object.keys(target?.categories ?? {}).length;
+    const hexCount = target?.hex?.features?.length ?? 0;
+    let remaining = categoryCount * hexCount;
+
     for (const [hexId, tagsObj] of Object.entries(crawler)) {
-      total[hexId] = 0;
-      crawled[hexId] = 0;
-      for (const [category, items] of Object.entries(tagsObj)) {
-        finish -= (items.final === true) ? 1 : 0;
-        total[hexId] += items.total;
-        crawled[hexId] += items.crawled;
-        for (const item of items.items.features) {
-          //console.log(item.properties)
-          stats[hexId] ??= [];
-          stats[hexId][item.properties.splatone_triId] ??= [];
-          stats[hexId][item.properties.splatone_triId][category] ??= 0;
-          stats[hexId][item.properties.splatone_triId][category] += 1;
+      let total = 0;
+      let crawled = 0;
+      for (const items of Object.values(tagsObj)) {
+        if (items?.final === true && remaining > 0) {
+          remaining--;
         }
+        total += Number(items?.total) || 0;
+        crawled += Number(items?.crawled) || 0;
       }
+      const safeTotal = Math.max(1, total);
       progress[hexId] = {
-        percent: total[hexId] == 0 ? 1 : crawled[hexId] / total[hexId],
-        crawled: crawled[hexId],
-        total: total[hexId]
+        percent: total === 0 ? 1 : Math.min(1, crawled / safeTotal),
+        crawled,
+        total
       };
     }
-    //console.table(progress);
-    return { stats, progress, finish: (finish == 0) };
+    return { progress, finish: remaining === 0 };
   };
 
   async function runTask_(taskName, data) {
     const { port1, port2 } = new MessageChannel();
     const filename = resolveWorkerFilename(taskName); // ← file URL (href)
+    const workerContext = data;
     // named export を呼ぶ場合は { name: "関数名" } を追加
     port1.on('message', (workerResults) => {
       // ここでログ／WebSocket通知／DB書き込みなど何でもOK
-      const rtn = workerResults.results;
-      const workerOptions = workerResults.workerOptions;
+      const rtn = workerResults?.results;
+      if (!rtn) {
+        console.warn('[splatone:start] Received malformed worker payload, skipping chunk.');
+        return;
+      }
+      if (!workerContext) {
+        console.warn('[splatone:start] Missing worker context, skipping chunk.');
+        return;
+      }
+      const workerOptions = workerContext;
       const currentSessionId = workerOptions.sessionId;
-      processing[currentSessionId]--;
+      const currentProcessing = (processing[currentSessionId] ?? 0) - 1;
+      processing[currentSessionId] = Math.max(0, currentProcessing);
+      const sessionCrawler = crawlers[currentSessionId];
+      if (!sessionCrawler) {
+        if (argv.debugVerbose) {
+          console.warn(`[session ${currentSessionId}] Received worker result after session disposal. Dropping chunk.`);
+        }
+        return;
+      }
+      if (rtn.error) {
+        console.warn(`[worker error] hex=${rtn.hexId} category=${rtn.category} code=${rtn.error.code ?? 'n/a'} message=${rtn.error.message ?? 'unknown'}`);
+      }
       //console.log(rtn);
-      crawlers[currentSessionId][rtn.hexId] ??= {};
-      crawlers[currentSessionId][rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
-      crawlers[currentSessionId][rtn.hexId][rtn.category].ids ??= new Set();
-      const duplicates = ((A, B) => new Set([...A].filter(x => B.has(x))))(rtn.ids, crawlers[currentSessionId][rtn.hexId][rtn.category].ids);
-      crawlers[currentSessionId][rtn.hexId][rtn.category].ids = new Set([...crawlers[currentSessionId][rtn.hexId][rtn.category].ids, ...rtn.ids]);
-      crawlers[currentSessionId][rtn.hexId][rtn.category].final = rtn.final;
-      crawlers[currentSessionId][rtn.hexId][rtn.category].crawled ??= 0;
-      crawlers[currentSessionId][rtn.hexId][rtn.category].total = rtn.final ? crawlers[currentSessionId][rtn.hexId][rtn.category].ids.size : rtn.total + crawlers[currentSessionId][rtn.hexId][rtn.category].crawled;
-      crawlers[currentSessionId][rtn.hexId][rtn.category].crawled = crawlers[currentSessionId][rtn.hexId][rtn.category].ids.size;
+      sessionCrawler[rtn.hexId] ??= {};
+  sessionCrawler[rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
+  sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
+  const idSet = sessionCrawler[rtn.hexId][rtn.category].ids;
 
-      if (rtn.photos.features.length >= 250 && rtn.photos.features.length == duplicates.size) {
+      let duplicateCount = 0;
+      const uniqueFeatures = [];
+      for (const feature of rtn.photos.features) {
+        const featureId = feature?.properties?.id;
+        if (featureId != null && idSet.has(featureId)) {
+          duplicateCount++;
+          continue;
+        }
+        if (featureId != null) {
+          idSet.add(featureId);
+        }
+        uniqueFeatures.push(feature);
+      }
+  sessionCrawler[rtn.hexId][rtn.category].final = rtn.final;
+  sessionCrawler[rtn.hexId][rtn.category].crawled ??= 0;
+  sessionCrawler[rtn.hexId][rtn.category].total = rtn.final ? sessionCrawler[rtn.hexId][rtn.category].ids.size : rtn.total + sessionCrawler[rtn.hexId][rtn.category].crawled;
+  sessionCrawler[rtn.hexId][rtn.category].crawled = sessionCrawler[rtn.hexId][rtn.category].ids.size;
+
+      if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
         console.error("ALL DUPLICATE");
       }
       if (argv.debugVerbose) {
-        console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicates.size}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${crawlers[currentSessionId][rtn.hexId][rtn.category].crawled} / ${crawlers[currentSessionId][rtn.hexId][rtn.category].total}`);
+        console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicateCount}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${sessionCrawler[rtn.hexId][rtn.category].crawled} / ${sessionCrawler[rtn.hexId][rtn.category].total}`);
       }
-      const photos = featureCollection(rtn.photos.features.filter((f) => !duplicates.has(f.properties.id)));
-      crawlers[currentSessionId][rtn.hexId][rtn.category].items
-        = concatFC(crawlers[currentSessionId][rtn.hexId][rtn.category].items, photos);
+      const photos = featureCollection(uniqueFeatures);
+      sessionCrawler[rtn.hexId][rtn.category].items
+        = concatFC(sessionCrawler[rtn.hexId][rtn.category].items, photos);
 
-      const { stats, progress, finish } = statsItems(crawlers[currentSessionId], targets[currentSessionId]);
+      const { progress, finish } = statsItems(sessionCrawler, targets[currentSessionId]);
       io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, progress });
       if (!rtn.final) {
         // 次回クロール用に更新
         rtn.nextPluginOptions.forEach((nextPluginOptions) => {
-          const workerOptions_clone = structuredClone(workerOptions);
-          workerOptions_clone.pluginOptions = nextPluginOptions;
-          api.emit('splatone:start', workerOptions_clone);
+          const workerOptionsClone = {
+            plugin: workerOptions.plugin,
+            hex: workerOptions.hex,
+            triangles: workerOptions.triangles,
+            bbox: workerOptions.bbox,
+            category: workerOptions.category,
+            tags: workerOptions.tags,
+            pluginOptions: nextPluginOptions,
+            sessionId: workerOptions.sessionId
+          };
+          api.emit('splatone:start', workerOptionsClone);
         });
         //} else if (finish) {
       } else if (processing[currentSessionId] == 0) {
         if (argv.debugVerbose) {
-          console.table(stats);
+          console.table(progress);
         }
         api.emit('splatone:finish', workerOptions);
       }
@@ -649,11 +714,16 @@ try {
     //console.log('[splatone:start]', workerOptions);
     const currentSessionId = workerOptions.sessionId;
     processing[currentSessionId] = (processing[currentSessionId] ?? 0) + 1;
-    runTask(workerOptions.plugin, workerOptions);
+    const safeOptions = JSON.parse(JSON.stringify(workerOptions, (_, value) => {
+      if (typeof value === 'function') return undefined;
+      return value;
+    }));
+    runTask(safeOptions.plugin, safeOptions);
   });
 
   await subscribe('splatone:finish', async workerOptions => {
     const currentSessionId = workerOptions.sessionId;
+    logHeapUsage(`after-crawl session=${currentSessionId}`);
     const resultId = uniqid();
     const result = crawlers[currentSessionId];
     const target = targets[currentSessionId];

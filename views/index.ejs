@@ -116,6 +116,36 @@
       reconnection: false
     });
 
+    function debounce(fn, wait = 300) {
+      let timer = null;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    function readMapViewCookie() {
+      const entry = document.cookie.split('; ').find(row => row.startsWith('splatoneMapView='));
+      if (!entry) return null;
+      try {
+        const encoded = entry.split('=')[1];
+        return JSON.parse(decodeURIComponent(encoded));
+      } catch {
+        return null;
+      }
+    }
+
+    function writeMapViewCookie({ lat, lon, zoom }) {
+      const payload = encodeURIComponent(JSON.stringify({ lat, lon, zoom }));
+      const maxAge = 60 * 60 * 24 * 30; // 30 days
+      document.cookie = `splatoneMapView=${payload}; path=/; max-age=${maxAge}`;
+    }
+
+    const storedView = readMapViewCookie();
+    const initialLat = Number.isFinite(Number(storedView?.lat)) ? Number(storedView.lat) : lat;
+    const initialLon = Number.isFinite(Number(storedView?.lon)) ? Number(storedView.lon) : lon;
+    const initialZoom = Number.isFinite(Number(storedView?.zoom)) ? Number(storedView.zoom) : 12;
+
     function setProgress(el, value) {
       //プログレスバー
       const v = Math.max(0, Math.min(100, Number(value)));
@@ -398,7 +428,19 @@
     const map = L.map('map', {
       preferCanvas: true,
       zoomControl: true
-    }).setView([lat, lon], 12);
+    }).setView([initialLat, initialLon], initialZoom);
+
+    const persistMapView = debounce(() => {
+      const center = map.getCenter();
+      writeMapViewCookie({
+        lat: Number(center.lat.toFixed(6)),
+        lon: Number(center.lng.toFixed(6)),
+        zoom: map.getZoom()
+      });
+    }, 500);
+
+    map.on('moveend', persistMapView);
+    map.on('zoomend', persistMapView);
     const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'

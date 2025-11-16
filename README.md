@@ -11,13 +11,20 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Bulky: クロールした全てのジオタグを小さな点で描画する
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
 - Majority Hex: HexGridの各セルをセル内で最頻出するカテゴリの色で彩色
+- Voronoi: HexGrid単位で集約したジオタグからVoronoiセルを生成し、各Hexのポリゴンでクリップして表示
 - Heat: ヒートマップ
 
 ## Change Log
 
+### v0.0.18 →　v0.0.19
+
+* **[可視化モジュール]** ```--vis-voronoi```追加
+  * ボロノイ図の生成
+
 ### v0.0.17 →　v0.0.18
 
 * **[可視化モジュール]** ```--vis-heat```追加
+  * ヒートマップの生成
 
 ### v0.0.13 →　v0.0.14 →　v0.0.15 →　v0.0.16 →　v0.0.17
 * **[可視化モジュール]** ```--vis-majority-hex```追加
@@ -78,6 +85,8 @@ Visualization (最低一つの指定が必須です)
                             で正規化。                [真偽] [デフォルト: false]
       --vis-marker-cluster  マーカークラスターとして地図上に表示
                                                       [真偽] [デフォルト: false]
+  --vis-voronoi         Hex GridごとにVoronoiセルを生成して表示
+                  [真偽] [デフォルト: false]
 
 For bulky Visualizer
       --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
@@ -186,6 +195,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vi
 
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
+
 ![](assets/screenshot_venice_marker-cluster.png?raw=true)
 
 #### コマンド例
@@ -208,7 +218,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
  
 ```shell
-$ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-heat --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway|交通#00a73d=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine" --vis-heat --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -242,6 +252,29 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 | ```--v-majority-hex-MinOpacity=0.3``` | 正規化後の最小塗り透明度                   | 数値 | 0.5        |
 
 * ```--v-majority-hex-Hexapartite```を指定すると各Hexセルを六分割の荒いPie Chartとして中のカテゴリ頻度に応じて彩色します。
+
+### Voronoi: Hex Gridをベースにしたボロノイ分割
+
+Hex Gridで集約した各セル内のジオタグを種点としてVoronoi分割を行い、生成したポリゴンをHex境界でクリップして表示します。カテゴリカラーと総数はHex集計結果に基づき、最小間隔／最大サイト数の制御で過密な地域も読みやすく整列できます。
+
+![](assets/screenshot_voronoi_kyoto.png?raw=true)
+
+#### コマンド例
+
+* クエリは水域・交通・宗教施設・緑地を色分けしたもの。Hex単位で50m以上離れたサイトだけをVoronoiセルとして採用します。
+
+```shell
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-voronoi --v-voronoi-MinSiteSpacingMeters=50 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+#### コマンドライン引数
+
+| オプション                                | 説明                                                                                      | 型   | デフォルト |
+| :---------------------------------------- | :---------------------------------------------------------------------------------------- | :--- | :--------- |
+| `--v-voronoi-MaxSitesPerHex`              | 1 HexあたりにPoissonサンプリングで残す最大サイト数。0のときは制限なし。                     | 数値 | 0          |
+| `--v-voronoi-MinSiteSpacingMeters`        | Hex内の採用サイト間で確保する最小距離 (メートル)。ジオタグが密集していても空間的に均等化。 | 数値 | 50         |
+
+Hex内にサイトが存在しない・ダウンサンプリングで0件になった場合は、コンソールにWarnを出しつつ他のHexの描画を継続します。
 
 ## キーワード指定方法
 
