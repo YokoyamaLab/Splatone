@@ -226,13 +226,69 @@ function warnHexNotRendered(hexId, reason, extra = {}) {
     console.warn(`[VoronoiVisualizer] Skipped hex ${hexId}: ${reason}${details}`);
 }
 
+function computeLocalCategoryDensityScores(features = [], minMeters = 0) {
+    const scores = new Map();
+    if (!Number.isFinite(minMeters) || minMeters <= 0) {
+        for (const feature of features) {
+            scores.set(feature, 0);
+        }
+        return scores;
+    }
+
+    const points = features.map(feature => {
+        const coords = feature?.geometry?.coordinates;
+        return Array.isArray(coords) ? turfPoint(coords) : null;
+    });
+
+    for (let i = 0; i < features.length; i++) {
+        const feature = features[i];
+        const category = feature?.properties?.category;
+        const point = points[i];
+        if (!category || !point) {
+            scores.set(feature, 0);
+            continue;
+        }
+
+        let density = 0;
+        for (let j = 0; j < features.length; j++) {
+            if (i === j) continue;
+            const other = features[j];
+            if (other?.properties?.category !== category) continue;
+            const otherPoint = points[j];
+            if (!otherPoint) continue;
+            const dist = turfDistance(point, otherPoint, { units: 'meters' });
+            if (!Number.isFinite(dist)) continue;
+            if (dist <= minMeters) {
+                density++;
+            }
+        }
+
+        scores.set(feature, density);
+    }
+
+    return scores;
+}
+
 function enforceMinSpacing(features = [], minMeters = 0) {
     if (!Number.isFinite(minMeters) || minMeters <= 0) {
         return features;
     }
 
+    const localDensityScores = computeLocalCategoryDensityScores(features, minMeters);
+
+    const prioritized = [...features].sort((a, b) => {
+        const scoreA = localDensityScores.get(a) ?? 0;
+        const scoreB = localDensityScores.get(b) ?? 0;
+        if (scoreA !== scoreB) {
+            return scoreB - scoreA;
+        }
+        const orderA = a?.properties?.__voronoiOrder ?? 0;
+        const orderB = b?.properties?.__voronoiOrder ?? 0;
+        return orderA - orderB;
+    });
+
     const accepted = [];
-    for (const feature of features) {
+    for (const feature of prioritized) {
         const coords = feature?.geometry?.coordinates;
         if (!Array.isArray(coords)) continue;
         const candidatePoint = turfPoint(coords);
@@ -263,14 +319,11 @@ function aggregateGeotagsByHex(result = {}, maxSitesPerHex = 0, minSpacingMeters
         if (!categories) continue;
 
         const aggregatedFeatures = [];
-        const categoryBreakdown = {};
         let featureOrder = 0;
 
         for (const [categoryName, payload] of Object.entries(categories)) {
             const features = payload?.items?.features ?? [];
             if (!features.length) continue;
-
-            categoryBreakdown[categoryName] = (categoryBreakdown[categoryName] ?? 0) + features.length;
 
             for (const feature of features) {
                 const cloned = cloneFeature(feature);
