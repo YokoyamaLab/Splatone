@@ -56,22 +56,18 @@
           </select>
         </label>
 
-        <label class="check">
-          <input id="toggleTriangles" type="checkbox" checked />
-          <span>Show triangles</span>
-        </label>
-
-        <label class="check">
-          <input id="toggleHexLabels" type="checkbox" />
-          <span>Show Hex IDs</span>
-        </label>
-
-        <div class="panel-actions">
-          <button id="clear" class="btn">Clear</button>
-        </div>
-
         <div class="bbox-row">
           <span id="bboxLabel" class="bbox-label"></span>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <label class="field">
+          <span>CLI Command</span>
+          <textarea id="cliCommand" class="cli-command" rows="4" readonly spellcheck="false"></textarea>
+        </label>
+        <div class="copy-row">
+          <button id="copyCliCommand" class="btn" type="button">Copy to clipboard</button>
         </div>
       </section>
 
@@ -111,6 +107,12 @@
   <script type="module">
     const lat = <%= lat %>;
     const lon = <%= lon %>;
+    const defaultGeometry = <%- JSON.stringify(defaultGeometry || {}) %>;
+    const cliContext = {
+      baseCommand: <%- JSON.stringify(cliBaseCommand || '') %>,
+      plugin: <%- JSON.stringify(selectedPlugin || '') %>,
+      visualizers: <%- JSON.stringify(selectedVisualizers || []) %>,
+    };
     const socket = io({
       path: "/socket",
       reconnection: false
@@ -170,6 +172,89 @@
       URL.revokeObjectURL(url);
     }
 
+  let currentDrawnGeoJSON = null;
+  let currentDrawKind = null;
+  let currentBboxArray = null;
+
+  const cliTextarea = document.getElementById('cliCommand');
+  const copyCliButton = document.getElementById('copyCliCommand');
+
+    function quoteSingle(value) {
+      const safe = String(value ?? '').replace(/'/g, "''");
+      return "'" + safe + "'";
+    }
+
+    function buildCliCommandString() {
+      if (!cliContext?.baseCommand) return '';
+      const parts = [cliContext.baseCommand.trim()].filter(Boolean);
+      if (cliContext.plugin) {
+        parts.push('-p', cliContext.plugin);
+      }
+      if (Array.isArray(cliContext.visualizers)) {
+        cliContext.visualizers.forEach((vis) => {
+          if (vis) parts.push(`--vis-${vis}`);
+        });
+      }
+      const keywordsInput = document.getElementById('keywords');
+      const keywordsVal = keywordsInput?.value?.trim();
+      if (keywordsVal) {
+        parts.push('-k', quoteSingle(keywordsVal));
+      }
+      const cellSizeInput = document.getElementById('cellSize');
+      const cellSizeVal = cellSizeInput?.value?.trim();
+      if (cellSizeVal) {
+        parts.push('--ui-cell-size', cellSizeVal);
+      }
+      const unitsSelect = document.getElementById('units');
+      const unitsVal = unitsSelect?.value;
+      if (unitsVal) {
+        parts.push('--ui-units', unitsVal);
+      }
+      if (currentDrawKind === 'rectangle' && Array.isArray(currentBboxArray)) {
+        parts.push('--ui-bbox', currentBboxArray.join(','));
+      } else if (currentDrawnGeoJSON) {
+        parts.push('--ui-polygon', quoteSingle(JSON.stringify(currentDrawnGeoJSON)));
+      }
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function updateCliCommand() {
+      if (!cliTextarea) return;
+      cliTextarea.value = buildCliCommandString();
+    }
+
+    copyCliButton?.addEventListener('click', async () => {
+      if (!cliTextarea) return;
+      const text = cliTextarea.value;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          cliTextarea.focus();
+          cliTextarea.select();
+          document.execCommand('copy');
+          window.getSelection()?.removeAllRanges?.();
+        }
+        Toastify({
+          text: 'CLIコマンドをコピーしました',
+          duration: 3000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-info'
+        }).showToast();
+      } catch (err) {
+        Toastify({
+          text: `コピーに失敗しました: ${err?.message || err}`,
+          duration: 4000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-error'
+        }).showToast();
+      }
+    });
+
+    updateCliCommand();
+
     socket.on('connect', () => {
       //console.log('Connected to server');
     });
@@ -178,11 +263,19 @@
       //console.log('Disconnected from server');
     });
 
-    let sessionId = null;
-    let visualizers = {};
-    let results = {};
-    let files = {};
-    let layerControl = null;
+    document.getElementById('keywords')?.addEventListener('input', updateCliCommand);
+    document.getElementById('cellSize')?.addEventListener('input', updateCliCommand);
+    document.getElementById('units')?.addEventListener('change', updateCliCommand);
+
+  let sessionId = null;
+  let visualizers = {};
+  let results = {};
+  let files = {};
+  let layerControl = null;
+    let welcomeReadyResolve;
+    const welcomeReady = new Promise((resolve) => {
+      welcomeReadyResolve = resolve;
+    });
     socket.on("welcome", async (res) => {
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
       //console.log("VIS", res.visualizers);
@@ -193,6 +286,10 @@
         return [vis, m.entry ?? m.default ?? m[vis]];
       })));
       //console.log(visualizers);
+      if (welcomeReadyResolve) {
+        welcomeReadyResolve();
+        welcomeReadyResolve = null;
+      }
     });
 
     function generateLegend(legends) {
@@ -500,7 +597,6 @@
     let myProgress = null;
     let hexLayerIndex = {}; // hexId -> layer
     let triLayerIndex = {}; // triangleId -> layer
-    let hexLabelLayer = L.layerGroup(); // Hex IDラベル群
 
     // Util: Bounds → "minLon,minLat,maxLon,maxLat"
     function boundsToBbox(bounds) {
@@ -564,43 +660,13 @@
       }
     }
 
-    // Hex IDラベルを作成
-    function renderHexLabels(hexFC) {
-      hexLabelLayer.clearLayers();
-      hexFC.features.forEach(f => {
-        const id = f.properties?.hexId;
-        if (!id) return;
-        const coords = f.geometry.coordinates[0];
-        let sumLat = 0,
-          sumLon = 0,
-          n = 0;
-        coords.slice(0, -1).forEach(([lon, lat]) => {
-          sumLat += lat;
-          sumLon += lon;
-          n++;
-        });
-        const lat = sumLat / n,
-          lon = sumLon / n;
-
-        const icon = L.divIcon({
-          html: `<div style="font-size:12px;font-weight:600;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:4px;border:1px solid #999;">${id}</div>`,
-          className: '',
-          iconSize: [0, 0]
-        });
-        L.marker([lat, lon], {
-          icon
-        }).addTo(hexLabelLayer);
-      });
-    }
-
     // Hex / Triangles を描画
     function renderLayers(hexFC, trianglesFC) {
       if (hexLayer) map.removeLayer(hexLayer);
       if (triLayer) map.removeLayer(triLayer);
-      document.getElementById('map_legend')?.replaceChildren();
-      if (myLegend) map.removeControl(myLegend);
-      if (myStartBtn) map.removeControl(myStartBtn);
-      hexLabelLayer.removeFrom(map);
+  document.getElementById('map_legend')?.replaceChildren();
+  if (myLegend) map.removeControl(myLegend);
+  if (myStartBtn) map.removeControl(myStartBtn);
       hexLayerIndex = {};
       triLayerIndex = {};
 
@@ -714,20 +780,10 @@
         }
       });
 
-      // 三角形トグル
-      if (document.getElementById('toggleTriangles').checked) {
-        triLayer.addTo(map);
-      }
-
-      // Hex ID ラベル
-      renderHexLabels(hexFC);
-      if (document.getElementById('toggleHexLabels').checked) {
-        hexLabelLayer.addTo(map);
-      }
+      triLayer.addTo(map);
 
       // ビュー調整
-      const layers = [hexLayer];
-      if (document.getElementById('toggleTriangles').checked) layers.push(triLayer);
+      const layers = [hexLayer, triLayer];
       const bounds = L.featureGroup(layers).getBounds();
       if (bounds.isValid()) map.fitBounds(bounds, {
         padding: [20, 20]
@@ -735,9 +791,18 @@
     }
 
     // API呼び出し
-    async function loadHexgridByBounds(bounds, drawn = null) {
+    async function loadHexgridByBounds(bounds, drawn = null, shapeKind = null) {
+      currentBboxArray = [
+        Number(bounds.getWest().toFixed(6)),
+        Number(bounds.getSouth().toFixed(6)),
+        Number(bounds.getEast().toFixed(6)),
+        Number(bounds.getNorth().toFixed(6)),
+      ];
+  currentDrawnGeoJSON = drawn || null;
+  currentDrawKind = drawn ? (shapeKind || 'polygon') : null;
       const bbox = boundsToBbox(bounds);
       document.getElementById('bboxLabel').textContent = `BBOX: ${bbox}`;
+      updateCliCommand();
 
       const cellSize = document.getElementById('cellSize').value.trim();
       const units = document.getElementById('units').value.trim();
@@ -769,9 +834,10 @@
     map.on(L.Draw.Event.CREATED, async (e) => {
       drawnItems.clearLayers();
       const layer = e.layer;
+      layer.__splatoneShape = e.layerType === 'rectangle' ? 'rectangle' : 'polygon';
       drawnItems.addLayer(layer);
       try {
-        await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON());
+        await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), layer.__splatoneShape);
       } catch (err) {
         alert(err.message);
       }
@@ -781,7 +847,9 @@
       const layers = drawnItems.getLayers();
       if (layers.length === 1) {
         try {
-          await loadHexgridByBounds(layers[0].getBounds(), layers[0].toGeoJSON());
+          const layer = layers[0];
+          const shapeKind = layer.__splatoneShape || (layer instanceof L.Rectangle ? 'rectangle' : 'polygon');
+          await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), shapeKind);
         } catch (err) {
           alert(err.message);
         }
@@ -807,8 +875,11 @@
         map.removeControl(myLegend);
         myLegend = null;
       }
-      hexLabelLayer.removeFrom(map);
       document.getElementById('bboxLabel').textContent = '';
+      currentDrawnGeoJSON = null;
+      currentDrawKind = null;
+      currentBboxArray = null;
+      updateCliCommand();
     });
 
     // ======= ハンバーガー / パネル制御 =======
@@ -843,46 +914,53 @@
       if (e.key === 'Escape') closePanel();
     });
 
-    // UIトグル
-    document.getElementById('clear').addEventListener('click', () => {
-      drawnItems.clearLayers();
-      if (hexLayer) {
-        map.removeLayer(hexLayer);
-        hexLayer = null;
+    async function applyDefaultGeometry() {
+      if (!defaultGeometry || (!defaultGeometry.polygon && !Array.isArray(defaultGeometry.bbox))) {
+        return;
       }
-      if (triLayer) {
-        map.removeLayer(triLayer);
-        triLayer = null;
-      }
-      if (myStartBtn) {
-        map.removeControl(myStartBtn);
-        myStartBtn = null;
-      }
-      if (myLegend) {
-        document.getElementById('map_legend')?.replaceChildren();
-        map.removeControl(myLegend);
-        myLegend = null;
-      }
-      hexLabelLayer.removeFrom(map);
-      document.getElementById('bboxLabel').textContent = '';
-    });
 
-    document.getElementById('toggleTriangles').addEventListener('change', () => {
-      if (!triLayer) return;
-      if (document.getElementById('toggleTriangles').checked) triLayer.addTo(map);
-      else map.removeLayer(triLayer);
-    });
+      const ensureDraw = async (layer) => {
+        await welcomeReady;
+        drawnItems.clearLayers();
+        layer.__splatoneShape = layer.__splatoneShape || (layer instanceof L.Rectangle ? 'rectangle' : 'polygon');
+        drawnItems.addLayer(layer);
+        await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), layer.__splatoneShape);
+      };
 
-    document.getElementById('toggleHexLabels').addEventListener('change', () => {
-      if (document.getElementById('toggleHexLabels').checked) {
-        hexLabelLayer.addTo(map);
-      } else {
-        hexLabelLayer.removeFrom(map);
+      if (defaultGeometry.polygon && typeof defaultGeometry.polygon === 'object') {
+        const geoLayer = L.geoJSON(defaultGeometry.polygon);
+        const layers = geoLayer.getLayers();
+        if (layers.length > 0) {
+          const layer = layers[0];
+          if (layer.getBounds().isValid()) {
+            map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+          }
+          layer.__splatoneShape = 'polygon';
+          await ensureDraw(layer);
+          return;
+        }
       }
-    });
 
-    // 初期は描画待ち（必要なら初期BBOXを有効化）
-    // loadHexgridByBounds(L.latLngBounds([35.53, 139.55], [35.80, 139.92]));
+      if (Array.isArray(defaultGeometry.bbox) && defaultGeometry.bbox.length === 4) {
+        const [minLon, minLat, maxLon, maxLat] = defaultGeometry.bbox;
+        if ([minLon, minLat, maxLon, maxLat].every(val => Number.isFinite(Number(val)))) {
+          const bounds = L.latLngBounds([
+            [minLat, minLon],
+            [maxLat, maxLon]
+          ]);
+          const rectangle = L.rectangle(bounds, { weight: 1, fillOpacity: 0 });
+          rectangle.__splatoneShape = 'rectangle';
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }
+          await ensureDraw(rectangle);
+        }
+      }
+    }
+
+    if (defaultGeometry?.polygon || Array.isArray(defaultGeometry?.bbox)) {
+      applyDefaultGeometry().catch((err) => console.error('Failed to apply default geometry', err));
+    }
   </script>
 </body>
 

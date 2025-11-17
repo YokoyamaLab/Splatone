@@ -66,6 +66,12 @@ Basic Options
   -c, --chopped   大きなデータを細分化して送受信する
                                              [非推奨] [真偽] [デフォルト: false]
 
+UI Defaults
+  --ui-cell-size  起動時にUIのセルサイズ欄へセットする値 (0で自動)      [数値]
+  --ui-units      セルサイズの単位を事前選択 (kilometers/meters/miles)  [文字列]
+  --ui-bbox       UI読み込み直後に矩形を描画 (minLon,minLat,maxLon,maxLat)
+  --ui-polygon    UI読み込み直後にポリゴンを描画 (Polygon/MultiPolygon GeoJSON)
+
 Debug
       --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
 

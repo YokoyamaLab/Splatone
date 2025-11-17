@@ -39,6 +39,7 @@ const VIZ_BASE = resolve(__dirname, "visualizer");
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
+const CLI_BASE_COMMAND = process.env.SPLATONE_CLI_BASE ?? 'npx -y -p splatone@latest crawler';
 let pluginsOptions = {};
 let visOptions = {};
 
@@ -46,6 +47,80 @@ const flickrLimiter = new Bottleneck({
   maxConcurrent: 6,
   minTime: 700, 
 });
+
+const VALID_UI_UNITS = new Set(['kilometers', 'meters', 'miles']);
+
+function normalizeUiCellSize(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
+    return 0;
+  }
+  return num;
+}
+
+function parseUiBbox(value) {
+  if (!value) return null;
+  const parts = String(value).split(',').map(v => Number(v.trim()));
+  if (parts.length !== 4 || parts.some(part => !Number.isFinite(part))) {
+    throw new Error('--ui-bbox must be "minLon,minLat,maxLon,maxLat"');
+  }
+  const [minLon, minLat, maxLon, maxLat] = parts;
+  if (minLon >= maxLon || minLat >= maxLat) {
+    throw new Error('--ui-bbox requires min < max for both lon and lat');
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+function extractPolygonFeature(input) {
+  if (!input) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch (err) {
+    throw new Error(`--ui-polygon must be valid GeoJSON: ${err.message}`);
+  }
+
+  const toFeature = (geometry, properties = {}) => ({
+    type: 'Feature',
+    properties,
+    geometry
+  });
+
+  if (parsed?.type === 'FeatureCollection') {
+    const target = parsed.features?.find(f => ['Polygon', 'MultiPolygon'].includes(f?.geometry?.type));
+    if (!target) {
+      throw new Error('--ui-polygon FeatureCollection must include at least one Polygon or MultiPolygon');
+    }
+    return toFeature(target.geometry, target.properties ?? {});
+  }
+
+  if (parsed?.type === 'Feature') {
+    if (!parsed.geometry || !['Polygon', 'MultiPolygon'].includes(parsed.geometry.type)) {
+      throw new Error('--ui-polygon Feature must contain Polygon or MultiPolygon geometry');
+    }
+    return toFeature(parsed.geometry, parsed.properties ?? {});
+  }
+
+  if (parsed?.type === 'Polygon' || parsed?.type === 'MultiPolygon') {
+    return toFeature(parsed, {});
+  }
+
+  throw new Error('--ui-polygon must be a Polygon/MultiPolygon geometry, Feature, or FeatureCollection');
+}
+
+function buildUiDefaults(argv) {
+  const cellSize = normalizeUiCellSize(argv['ui-cell-size']);
+  const unitsInput = argv['ui-units'];
+  const units = VALID_UI_UNITS.has(unitsInput) ? unitsInput : 'kilometers';
+  const bbox = parseUiBbox(argv['ui-bbox']);
+  const polygon = argv['ui-polygon'] ? extractPolygonFeature(argv['ui-polygon']) : null;
+  return {
+    cellSize,
+    units,
+    bbox,
+    polygon
+  };
+}
 
 try {
 
@@ -165,6 +240,25 @@ try {
       type: 'boolean',
       default: false,
       description: 'デバッグ情報出力'
+    }).option('ui-cell-size', {
+      group: 'UI Defaults',
+      type: 'number',
+      default: 0,
+      description: '起動時にUIへ設定するセルサイズ (0で自動)'
+    }).option('ui-units', {
+      group: 'UI Defaults',
+      type: 'string',
+      choices: ['kilometers', 'meters', 'miles'],
+      default: 'kilometers',
+      description: 'セルサイズの単位 (kilometers/meters/miles)'
+    }).option('ui-bbox', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: 'UI初期表示の矩形範囲。"minLon,minLat,maxLon,maxLat" の形式'
+    }).option('ui-polygon', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: 'UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文字列'
     })
     .version()
     .coerce({
@@ -208,6 +302,14 @@ try {
   });
 
   const argv = await yargv.parseAsync();
+
+  let uiDefaults;
+  try {
+    uiDefaults = buildUiDefaults(argv);
+  } catch (err) {
+    console.error(err?.message || err);
+    process.exit(1);
+  }
 
   const visualizers = {};
   for (const vis of Object.keys(visualizers_).filter(v => argv[`vis-${v}`])) {
@@ -285,6 +387,8 @@ try {
       console.warn('[memory] Failed to read usage stats:', err?.message || err);
     }
   }
+
+  
   /**
    * /api/hexgrid
    *  クエリ:
@@ -311,9 +415,16 @@ try {
       title: title,
       lat: DEFAULT_CENTER.lat,
       lon: DEFAULT_CENTER.lon,
-      defaultCellSize: 0,
-      defaultUnits: 'kilometers',
+      defaultCellSize: uiDefaults.cellSize,
+      defaultUnits: uiDefaults.units,
       defaultKeywords: argv.keywords,
+      defaultGeometry: {
+        bbox: uiDefaults.bbox,
+        polygon: uiDefaults.polygon,
+      },
+      selectedPlugin: argv.plugin,
+      selectedVisualizers: Object.keys(visualizers),
+      cliBaseCommand: CLI_BASE_COMMAND,
     });
   });
 
