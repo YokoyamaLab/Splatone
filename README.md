@@ -174,6 +174,8 @@ APIキーは以下の３種類の方法で与える事ができます
 
 ### Bulky: 全ての点を地図上にポイントする
 
+全ての点を地図上に表示する。
+
 ![](assets/screenshot_sea-mountain_bulky.png?raw=true)
 
 #### コマンド例
@@ -196,6 +198,8 @@ $ npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vi
 
 ### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
 
+全マーカーを表示すると、地図上がマーカーで埋め尽くされる問題に対して、高密度地点のマーカー群を一つにまとめてマーカーとする手法。ズームレベルに応じて自動的にマーカーが集約される。
+
 ![](assets/screenshot_venice_marker-cluster.png?raw=true)
 
 #### コマンド例
@@ -210,6 +214,8 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 | ```--v-marker-cluster-MaxClusterRadius``` | クラスタを構成する範囲(半径) | 数値 | 80         |
 
 ### Heat: ヒートマップ
+
+出現頻度に基づいて点の影響範囲をガウス分布で定め連続的に彩色するヒートマップ。
 
 ![](assets/screenshot_venice_heat.png?raw=true)
 
@@ -235,8 +241,10 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 ![](assets/screenshot_florida_hex_majorityr.png?raw=true)
 
 #### コマンド例
+
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
-* 
+
+
 ```shell
 $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
@@ -257,14 +265,14 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 
 Hex Gridで集約した各セル内のジオタグを種点としてVoronoi分割を行い、生成したポリゴンをHex境界でクリップして表示します。カテゴリカラーと総数はHex集計結果に基づき、最小間隔／最大サイト数の制御で過密な地域も読みやすく整列できます。
 
-![](assets/screenshot_voronoi_kyoto.png?raw=true)
+![](assets/screenshot_voronoi_tokyo.png?raw=true)
 
 #### コマンド例
 
-* クエリは水域・交通・宗教施設・緑地を色分けしたもの。Hex単位で50m以上離れたサイトだけをVoronoiセルとして採用します。
+* クエリは水域・交通・宗教施設・緑地を色分けしたもの。Hex単位で50m以上離れたサイトだけをVoronoiセルとして採用します。上記の例は東京を範囲としたもの。皇居の緑地や墨田川の水域がよく現れている。
 
 ```shell
-$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-voronoi --v-voronoi-MinSiteSpacingMeters=50 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-voronoi --v-voronoi-MinSiteSpacingMeters=50　--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数
@@ -272,9 +280,9 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 | オプション                                | 説明                                                                                      | 型   | デフォルト |
 | :---------------------------------------- | :---------------------------------------------------------------------------------------- | :--- | :--------- |
 | `--v-voronoi-MaxSitesPerHex`              | 1 HexあたりにPoissonサンプリングで残す最大サイト数。0のときは制限なし。                     | 数値 | 0          |
-| `--v-voronoi-MinSiteSpacingMeters`        | Hex内の採用サイト間で確保する最小距離 (メートル)。ジオタグが密集していても空間的に均等化。 | 数値 | 50         |
+| `--v-voronoi-MinSiteSpacingMeters`        | Hex内の採用サイト間で確保する最小距離 (メートル)。ジオタグが密集していても空間的に均等化しつつ、MinSiteSpacingMeters範囲内で出現数の多いカテゴリを優先して残す。 | 数値 | 50         |
 
-Hex内にサイトが存在しない・ダウンサンプリングで0件になった場合は、コンソールにWarnを出しつつ他のHexの描画を継続します。
+MinSiteSpacingMetersによる間引きは、各サイト周辺 (MinSiteSpacingMeters以内) の同カテゴリ出現数を優先度として利用するため、同距離内で競合した場合も局所的に密度の高いカテゴリのサイトが採用されやすくなります。一方で密度は低いが他の場所に比べて顕著に出現するカテゴリを見逃す可能性があります。なお、Voronoi図の作成は消費メモリが大きい為、デフォルトでは50m間隔に間引きます。厳密解が必要な場合は```--v-voronoi-MinSiteSpacingMeters=0```を指定してください。ただし、その場合はヒープを使い果たしてクラッシュする可能性があります。マシンパワーに余裕がある場合は```npx --node-options='--max-old-space-size=10240'```のようにヒープサイズを拡大して実行する事も可能です。もう一つのオプション```--v-voronoi-MaxSitesPerHex```はHex内の最大アイテム数を制限するものです。ポワソンサンプリングに基づいてアイテムを間引きます。MinSiteSpacingMetersと共に、適切な結果が得られるよう調整してください。
 
 ## キーワード指定方法
 
