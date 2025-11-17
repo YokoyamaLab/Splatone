@@ -11,27 +11,34 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Bulky: クロールした全てのジオタグを小さな点で描画する
 - Marker Cluster: 密集しているジオタグをクラスタリングしてまとめて表示する
 - Majority Hex: HexGridの各セルをセル内で最頻出するカテゴリの色で彩色
+- Pie Charts: Hexセル中心にカテゴリ割合のPie Chartを描画し、カテゴリごとに半径を可変化
 - Voronoi: HexGrid単位で集約したジオタグからVoronoiセルを生成し、各Hexのポリゴンでクリップして表示
 - Heat: ヒートマップ
+- Pie Charts: 円グラフグリッド
 
 ## Change Log
 
-### v0.0.18 →　v0.0.19
+### v0.0.18 → →　v0.0.22
 
 * **[可視化モジュール]** ```--vis-voronoi```追加
   * ボロノイ図の生成
+* **[可視化モジュール]** ```--vis-pie-charts```追加
+  * Hex中心のカテゴリ割合Pie Chart描画
+* マイナーBug Fix
 
 ### v0.0.17 →　v0.0.18
 
 * **[可視化モジュール]** ```--vis-heat```追加
   * ヒートマップの生成
 
-### v0.0.13 →　v0.0.14 →　v0.0.15 →　v0.0.16 →　v0.0.17
+### v0.0.13 → →　v0.0.17
+
 * **[可視化モジュール]** ```--vis-majority-hex```追加
 * 結果の色固定機能追加 (キーワード指定方法を参照の事)
 * [Bug Fix] npxが起動しない事象の修正
 
 ### v0.0.12 →　v0.0.13
+
 * BulkyのPointMarkerのサイズや透明度を可変に
   * コマンドライン引数で指定 (詳しくは```  npx -y -p splatone@latest crawler --help```)
 
@@ -71,7 +78,7 @@ For flickr Plugin
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
       --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763224757]
+                                               [文字列] [デフォルト: 1763354933]
       --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
@@ -85,8 +92,10 @@ Visualization (最低一つの指定が必須です)
                             で正規化。                [真偽] [デフォルト: false]
       --vis-marker-cluster  マーカークラスターとして地図上に表示
                                                       [真偽] [デフォルト: false]
-  --vis-voronoi         Hex GridごとにVoronoiセルを生成して表示
-                  [真偽] [デフォルト: false]
+      --vis-pie-charts      Hex中心にカテゴリ割合のPie
+                            Chartを描画するビジュアライザ
+                                                      [真偽] [デフォルト: false]
+      --vis-voronoi         Hex Grid ボロノイ図       [真偽] [デフォルト: false]
 
 For bulky Visualizer
       --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
@@ -117,10 +126,29 @@ For marker-cluster Visualizer
       --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
                                                          [数値] [デフォルト: 80]
 
+For pie-charts Visualizer
+      --v-pie-charts-MaxRadiusScale     Hex内接円半径に対する最大半径スケール
+                                        (0-1.5)         [数値] [デフォルト: 0.9]
+      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1)
+                                                       [数値] [デフォルト: 0.25]
+      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px)
+                                                          [数値] [デフォルト: 1]
+      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1)
+                                                        [数値] [デフォルト: 0.2]
+
+For voronoi Visualizer
+      --v-voronoi-MaxSitesPerHex        ポワソン分布に基づいて各ヘックス内でサン
+                                        プリングされる最大サイト数 (0 = 無制限)
+                                                          [数値] [デフォルト: 0]
+      --v-voronoi-MinSiteSpacingMeters  各ヘックス内でサンプリングされたサイト間
+                                        の最小距離をメートル単位で保証 (0 =
+                                        無効)            [数値] [デフォルト: 50]
+
 オプション:
       --help     ヘルプを表示                                             [真偽]
-      --version  バージョンを表示                                         [真偽]
+      --version  バージョンを表示                                         [真偽]      
 ```
+
 ## 最小コマンド例
 
 1. *plugin*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
@@ -261,6 +289,33 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 
 * ```--v-majority-hex-Hexapartite```を指定すると各Hexセルを六分割の荒いPie Chartとして中のカテゴリ頻度に応じて彩色します。
 
+### Pie Charts: Hex中心にカテゴリ割合Pie Chartを描画
+
+![](assets/screenshot_pie_tokyo.png?raw=true)
+
+Hexセル中心に、カテゴリ比率を角度で、グローバル出現数を半径で示すPie Chartを描画します。カテゴリごとに円弧の半径が異なるため、同じHex内でも「世界的にどのカテゴリが多く集まったか」を直感的に比較できます。Pie Chart自体はHex境界内に収まるよう中央へ配置されます。
+
+ズームイン／アウト時にはLeafletのzoomイベントをフックしてPie Chartを再描画し、現在の縮尺でもHex境界にフィットする半径が自動再計算されます。
+
+#### コマンド例
+
+* クエリは水域・交通・宗教施設・緑地を色分け。Hexサイズに応じて自動計算される最大半径を90%まで、最小半径をその40%に設定しています。
+
+```shell
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-pie-charts --v-pie-charts-MaxRadiusScale=0.9 --v-pie-charts-MinRadiusScale=0.4 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+#### コマンドライン引数
+
+| オプション                               | 説明                                                                                                          | 型   | デフォルト |
+| :--------------------------------------- | :------------------------------------------------------------------------------------------------------------ | :--- | :--------- |
+| `--v-pie-charts-MaxRadiusScale`          | Hex内接円半径に対する最大Pie半径の倍率(0-1.5)。1.0でHex境界いっぱい、0.9なら10%余白。                             | 数値 | 0.9        |
+| `--v-pie-charts-MinRadiusScale`          | 最大半径に対する最小Pie半径の倍率(0-1)。カテゴリが存在する場合に確保する下限割合。                                 | 数値 | 0.25       |
+| `--v-pie-charts-StrokeWidth`             | Pie Chart外周・扇形境界の線幅(px)。                                                                             | 数値 | 1          |
+| `--v-pie-charts-BackgroundOpacity`       | 最大半径ガイドリングの塗り透明度(0-1)。背景リングの見え方を調整します。                                          | 数値 | 0.2        |
+
+Pie Chartの最大・最小半径は各Hexのジオメトリから算出した内接円半径に基づき動的に決まり、カテゴリごとの扇形半径は「そのHex内カテゴリ出現数 ÷ 全カテゴリ総数」に比例して拡大します。グローバル最大カテゴリのシェアを1として正規化するため、Hex間でもカテゴリ規模を比較できます。
+
 ### Voronoi: Hex Gridをベースにしたボロノイ分割
 
 Hex Gridで集約した各セル内のジオタグを種点としてVoronoi分割を行い、生成したポリゴンをHex境界でクリップして表示します。カテゴリカラーと総数はHex集計結果に基づき、最小間隔／最大サイト数の制御で過密な地域も読みやすく整列できます。
@@ -285,6 +340,8 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 MinSiteSpacingMetersによる間引きは、各サイト周辺 (MinSiteSpacingMeters以内) の同カテゴリ出現数を優先度として利用するため、同距離内で競合した場合も局所的に密度の高いカテゴリのサイトが採用されやすくなります。一方で密度は低いが他の場所に比べて顕著に出現するカテゴリを見逃す可能性があります。なお、Voronoi図の作成は消費メモリが大きい為、デフォルトでは50m間隔に間引きます。厳密解が必要な場合は```--v-voronoi-MinSiteSpacingMeters=0```を指定してください。ただし、その場合はヒープを使い果たしてクラッシュする可能性があります。マシンパワーに余裕がある場合は```npx --node-options='--max-old-space-size=10240'```のようにヒープサイズを拡大して実行する事も可能です。もう一つのオプション```--v-voronoi-MaxSitesPerHex```はHex内の最大アイテム数を制限するものです。ポワソンサンプリングに基づいてアイテムを間引きます。MinSiteSpacingMetersと共に、適切な結果が得られるよう調整してください。
 
 ## キーワード指定方法
+
+キーワードとはソーシャルデータを検索する単語の事で、複数のキーワードをしていする事で、地理的な出現頻度・分散を比較できます。
 
 ### 比較キーワードの指定
 
