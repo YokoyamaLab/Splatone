@@ -18,6 +18,16 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## Change Log
 
+### v0.0.22 → →　v0.0.23
+
+* ブラウズモードの追加
+  * ダウンロードした結果ファイルを閲覧するモード
+  * ハンバーガーメニューの拡充
+    * 結果の統計情報の追加
+    * CLIコマンドの表示
+* カラーパレット生成ツールの改良
+  * ブラウザ上でカラーの確認と調整を可能に
+
 ### v0.0.18 → →　v0.0.22
 
 * **[可視化モジュール]** ```--vis-voronoi```追加
@@ -58,22 +68,29 @@ $ npx -y -p splatone@latest crawler --help
 使い方: crawler.js [options]
 
 Basic Options
-  -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
-  -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:
+  -p, --plugin       実行するプラグイン    [文字列] [選択してください: "flickr"]
+  -k, --keywords     検索キーワード(|区切り)               [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
-  -f, --filed     大きなデータをファイルとして送受信する (デフォルト: false)
+  -f, --filed        大きなデータをファイルとして送受信する
                                                        [真偽] [デフォルト: true]
-  -c, --chopped   大きなデータを細分化して送受信する
+  -c, --chopped      大きなデータを細分化して送受信する
                                              [非推奨] [真偽] [デフォルト: false]
-
-UI Defaults
-  --ui-cell-size  起動時にUIのセルサイズ欄へセットする値 (0で自動)      [数値]
-  --ui-units      セルサイズの単位を事前選択 (kilometers/meters/miles)  [文字列]
-  --ui-bbox       UI読み込み直後に矩形を描画 (minLon,minLat,maxLon,maxLat)
-  --ui-polygon    UI読み込み直後にポリゴンを描画 (Polygon/MultiPolygon GeoJSON)
+      --browse-mode  ブラウズ専用モード（範囲描画とクロールを無効化）
+                                                      [真偽] [デフォルト: false]
 
 Debug
       --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
+
+UI Defaults
+      --ui-cell-size  起動時にUIへ設定するセルサイズ (0で自動)
+                                                          [数値] [デフォルト: 0]
+      --ui-units      セルサイズの単位 (kilometers/meters/miles)
+       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
+                                                                   "kilometers"]
+      --ui-bbox       UI初期表示の矩形範囲。"minLon,minLat,maxLon,maxLat" の形式
+                                                                        [文字列]
+      --ui-polygon    UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文
+                      字列                                              [文字列]
 
 For flickr Plugin
       --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]
@@ -84,7 +101,7 @@ For flickr Plugin
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
       --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763354933]
+                                               [文字列] [デフォルト: 1763465845]
       --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
@@ -152,7 +169,7 @@ For voronoi Visualizer
 
 オプション:
       --help     ヘルプを表示                                             [真偽]
-      --version  バージョンを表示                                         [真偽]      
+      --version  バージョンを表示                                         [真偽]
 ```
 
 ## 最小コマンド例
@@ -170,6 +187,26 @@ For voronoi Visualizer
 ```bash
 $ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
+
+## ブラウズ専用モード
+
+ダウンロードした結果ファイルをブラウザ上で閲覧するためのモードです。
+
+```bash
+npx -y -p splatone@latest browse
+```
+
+あるいは
+
+```bash
+npx -y -p splatone@latest crawl --browse-mode
+```
+
+- ブラウザ上に result*.json（`crawler` が保存したファイル）をドラッグ＆ドロップすると、その場で結果が地図へ描画されます。ズームやパン等Leafletの機能が使えます。
+- CLI コマンド生成欄には、この結果を生成したコマンドが表示さるため、同じ条件をベースに新たなクエリを発行できます。
+ 
+
+
 
 # 詳細説明
 
@@ -428,9 +465,6 @@ npx -y -p splatone@latest color --no-ansi 6 3
 * クロール結果をデータとしてダウンロードしたい場合は凡例の下にあるエクスポートボタンをクリックしてください。
   * 指定したビジュアライザ毎にFeature Collectionとして結果が格納されます。
   * クローリングしたデータそのものが欲しい場合はBulky等、単純なビジュアライザを指定してください。
-
-![](assets/icon_data_export.png?raw=true)
-
 ### 広範囲なデータ収集例
 
 * クエリ数はおおよそ1 query/secに調整されますので、時間はかかりますが大量のデータを収集する事も可能です。
