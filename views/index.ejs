@@ -71,6 +71,12 @@
         </div>
       </section>
 
+      <section class="panel-section" id="statsSection" hidden>
+        <h3>統計情報</h3>
+        <div id="statsSummary" class="stats-summary muted"></div>
+        <div id="statsHexList" class="stats-hex-list"></div>
+      </section>
+
       <section class="panel-section">
         <details>
           <summary>ヘルプ</summary>
@@ -155,6 +161,54 @@
       el.setAttribute('aria-valuenow', String(v));
       const label = el.querySelector('.progress__label');
       if (label) label.textContent = v + '%';
+    }
+
+    function formatPercentValue(value) {
+      if (!Number.isFinite(value)) return '0%';
+      return (Math.round(Math.max(0, Math.min(1, value)) * 1000) / 10) + '%';
+    }
+
+    function renderStatsPanel(stats) {
+      const section = document.getElementById('statsSection');
+      const summaryEl = document.getElementById('statsSummary');
+      const hexListEl = document.getElementById('statsHexList');
+      if (!section || !summaryEl || !hexListEl) return;
+      if (!stats || !stats.totals) {
+        section.hidden = true;
+        summaryEl.textContent = '';
+        hexListEl.textContent = '';
+        return;
+      }
+      const totals = stats.totals;
+      section.hidden = false;
+      summaryEl.innerHTML = `
+        <div>Hex総数: <strong>${totals.hexes ?? 0}</strong></div>
+        <div>カテゴリ数: <strong>${totals.categories ?? 0}</strong></div>
+        <div>取得済み: <strong>${totals.crawled ?? 0}</strong></div>
+        <div>残り推定: <strong>${totals.remaining ?? 0}</strong></div>
+        <div>進捗: <strong>${formatPercentValue(totals.percent ?? 0)}</strong></div>
+      `;
+
+      const entries = Object.entries(stats.hexes ?? {});
+      if (!entries.length) {
+        hexListEl.innerHTML = '<p class="muted">Hex単位の統計はまだありません。</p>';
+        return;
+      }
+      entries.sort((a, b) => (b[1]?.percent ?? 0) - (a[1]?.percent ?? 0));
+      const rows = entries.slice(0, 6).map(([hexId, info]) => {
+        const percent = formatPercentValue(info?.percent ?? 0);
+        const crawled = info?.crawled ?? 0;
+        const expected = info?.expected ?? info?.total ?? (crawled + (info?.remaining ?? 0));
+        const remaining = info?.remaining ?? Math.max(0, expected - crawled);
+        return `
+          <div class="stats-hex-row">
+            <span class="stats-hex-label">Hex ${hexId}</span>
+            <span class="stats-hex-progress">${percent}</span>
+            <span class="stats-hex-detail">${crawled}/${expected} (残り${remaining})</span>
+          </div>
+        `;
+      });
+      hexListEl.innerHTML = rows.join('');
     }
 
     function downloadJSON(filename, obj) {
@@ -272,6 +326,7 @@
   let results = {};
   let files = {};
   let layerControl = null;
+  const hexProgress = {};
     let welcomeReadyResolve;
     const welcomeReady = new Promise((resolve) => {
       welcomeReadyResolve = resolve;
@@ -348,28 +403,35 @@
       }
     });
     socket.on('progress', (res) => {
-      //console.table(res.progress);
-      //console.log(Object.values(res.progress));
-      let {
-        crawled,
-        total
-      } = Object.values(res.progress).reduce(
-        (acc, g) => (g == null ? acc : {
-          crawled: acc.crawled + (g.crawled ?? 0),
-          total: acc.total + (g.total ?? 0)
-        }), {
-          crawled: 0,
-          total: 0
-        }
+      //res.currentHexはカテゴリごとのcrawled/totalを保持している
+      const { crawled, total } = Object.values(res.currentHex ?? {}).reduce(
+        (acc, cat) => (cat == null ? acc : {
+          crawled: acc.crawled + (cat.crawled ?? 0),
+          total: acc.total + (cat.total ?? 0)
+        }),
+        { crawled: 0, total: 0 }
       );
-      if (total == 0) {
-        crawled = 1, total = 1;
-      }
-      const percent = Math.round((crawled / total) * 100000) / 1000;
-      //console.log(`[Done] ${crawled} / ${total} --> ${percent}`);
+      const safeTotal = Math.max(1, total);
+      const normalized = total === 0 ? 1 : Math.min(1, crawled / safeTotal);
+      hexProgress[res.hexId] = {
+        crawled,
+        total: safeTotal,
+        normalized
+      };
+
+      const aggregated = Object.values(hexProgress).reduce(
+        (acc, hex) => ({
+          crawled: acc.crawled + (hex?.crawled ?? 0),
+          total: acc.total + (hex?.total ?? 0)
+        }),
+        { crawled: 0, total: 0 }
+      );
+      const aggSafeTotal = Math.max(1, aggregated.total);
+      const overallNormalized = aggregated.total === 0 ? 1 : Math.min(1, aggregated.crawled / aggSafeTotal);
+      const percent = Math.round(overallNormalized * 100000) / 1000;
       setProgress(document.getElementById("progressCrawl"), percent);
       //ここでHexのプログレスグラデーションレイヤのOpacity調整
-      highlightHexById(res.hexId, 1 - res.progress[res.hexId].percent, "#263238");
+      highlightHexById(res.hexId, 1 - normalized, "#263238");
     });
 
     function isPlainObject(a) {
@@ -445,27 +507,37 @@
       }); // only one argument is expected
     });
 
-    let latestResult = {};
+    let latestResult = null;
     let latestFile = null;
     const overlays = {};
+    const resultExtras = {};
     socket.on('result', async (res, callback) => {
-      //console.log("result");
-      latestResult["_"]["visualizers"] = res.visualizers;
-      latestResult["_"]["plugin"] = res.plugin;
+      let bundle = res.bundle ?? null;
       clearHexHighlight();
-      if (res.geoJson == null) {
-        res.geoJson = results[res.resultId];
+      if (!bundle) {
+        bundle = results[res.resultId];
       } else {
-        results[res.resultId] = res.geoJson;
+        results[res.resultId] = bundle;
       }
-      latestResult = {
-        ...latestResult,
-        ...res.geoJson
+      if (!bundle) {
+        console.warn('[result] bundle not available yet');
+        callback({ pong: Date.now(), ok: false });
+        return;
+      }
+      const geoJson = bundle.geoJson ?? {};
+      const palette = bundle.palette ?? {};
+      const visOptionsFromServer = bundle.visOptions ?? {};
+      renderStatsPanel(bundle.context?.stats ?? null);
+      bundle.extra = {
+        ...(bundle.extra ?? {}),
+        ...resultExtras
       };
+      latestResult = bundle;
+      latestFile = null;
       for (const vis in visualizers) {
-        const layers = await visualizers[vis](map, res.geoJson[vis], {
-          palette: res.palette,
-          visOptions:res.visOptions[vis]
+        const layers = await visualizers[vis](map, geoJson[vis], {
+          palette,
+          visOptions: visOptionsFromServer[vis]
         });
         //console.log("【レイヤ】\n", JSON.stringify(layers,null,4));
         if ((layers == null)) {
@@ -486,15 +558,15 @@
       document.getElementById('map_legend')?.replaceChildren();
       const ul = document.createElement('div');
       ul.className = 'legend_ul';
-      const palette = [];
-      for (const cat in res.palette) {
-        palette.push({
+      const paletteEntries = [];
+      for (const cat in palette) {
+        paletteEntries.push({
           category: cat,
-          fill: res.palette[cat].color,
-          stroke: res.palette[cat].darken
+          fill: palette[cat].color,
+          stroke: palette[cat].darken
         });
       }
-      ul.innerHTML = generateLegend(palette);
+      ul.innerHTML = generateLegend(paletteEntries);
       //console.log(overlays);
       layerControl = L.control.layers([baseLayer], {
         ...overlays,
@@ -509,7 +581,9 @@
       document.getElementById("download-json").addEventListener("click", async () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
         if(latestFile===null){
-          downloadJSON(`splatone-${stamp}.json`, latestResult);
+          if(latestResult){
+            downloadJSON(`splatone-${stamp}.json`, latestResult);
+          }
         }else{
           await downloadJSONFile(`splatone-${stamp}.json`, latestFile);
         }
@@ -807,15 +881,16 @@
       const cellSize = document.getElementById('cellSize').value.trim();
       const units = document.getElementById('units').value.trim();
       const keywords = document.getElementById('keywords').value.trim();
-      latestResult["_"] ??= {};
-      latestResult["_"]["keywords"] = keywords;
+      resultExtras.keywords = keywords;
       socket.once("hexgrid", (res) => {
         if (res.sessionId) sessionId = res.sessionId;
         //console.log(`hexgrid received (${res.hex.features.length} hexes, ${res.triangles.features.length} triangles)`);
+        Object.keys(hexProgress).forEach((key) => delete hexProgress[key]);
         const hex = res.hex;
         const triangles = res.triangles;
-        latestResult["_"]["hex"] = hex;
-        latestResult["_"]["triangles"] = [triangles];
+        resultExtras.hex = hex;
+        resultExtras.triangles = [triangles];
+        renderStatsPanel(null);
         renderLayers(hex, triangles);
       });
       socket.emit("target", {

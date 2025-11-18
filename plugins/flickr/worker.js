@@ -172,10 +172,11 @@ export default async function ({
                 tags,
                 category,
                 nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
-                total: res.photos.total,
+                TermId: pluginOptions.TermId,
+                remaining:  res.photos.total - res.photos.photo.length,
                 outside: outside,
                 ids,
-                final: nextPluginOptionsDelta.length == 0//res.photos.photo.length == res.photos.total
+                final: nextPluginOptionsDelta.length == 0
             }
         };
 
@@ -196,7 +197,8 @@ export default async function ({
                 tags,
                 category,
                 nextPluginOptions: [],
-                total: 0,
+                TermId: pluginOptions.TermId,
+                remaining: 0,
                 outside: 0,
                 ids: [],
                 final: true,
@@ -208,28 +210,5 @@ export default async function ({
         });
         return false;
     }
-    return {
-        photos,
-        hexId: hex.properties.hexId,
-        tags,
-        category,
-        nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
-        total: res.photos.total,
-        outside: outside,
-        ids,
-        final: res.photos.photo.length == res.photos.total
-    };
-    /*
-    pluginOptions["DateMax"] = next_max_date;
-    return {
-        photos,
-        hexId: hex.properties.hexId,
-        tags,
-        category,
-        nextPluginOptions: pluginOptions,
-        total: res.photos.total,
-        outside: outside,
-        ids,
-        final: res.photos.photo.length == res.photos.total
-    };*/
+    return false;
 }

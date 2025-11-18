@@ -61,7 +61,7 @@ Basic Options
   -p, --plugin    実行するプラグイン[文字列] [必須] [選択してください: "flickr"]
   -k, --keywords  検索キーワード(|区切り)                  [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
-  -f, --filed     大きなデータをファイルとして送受信する
+  -f, --filed     大きなデータをファイルとして送受信する (デフォルト: false)
                                                        [真偽] [デフォルト: true]
   -c, --chopped   大きなデータを細分化して送受信する
                                              [非推奨] [真偽] [デフォルト: false]

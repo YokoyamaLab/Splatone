@@ -1,0 +1,30 @@
+# Ignore node modules and logs
+node_modules
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# Build / debug artifacts
+debug.result.json
+debug.target.json
+
+# Local configuration / OS files
+.DS_Store
+Thumbs.db
+
+# Git / editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Tests (if any)
+coverage
+*.test.js
+*.spec.js
+
+# Project-specific: do not publish assets used only for development
+assets
+
+# Misc
+*.zip
