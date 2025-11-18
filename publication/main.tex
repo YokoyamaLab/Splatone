@@ -1,0 +1,85 @@
+% !TeX program = pdflatex
+% !TeX encoding = UTF-8
+
+%==============================
+% Splatone Preprint (Skeleton)
+%==============================
+
+\documentclass[11pt,a4paper]{article}
+
+%--------- Packages ----------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{authblk}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=25mm}
+
+%--------- Meta data ----------
+\title{Splatone: A Visual Analytics Tool for Geotagged Image Collections}
+
+% TODO: 著者情報を埋めてください
+\author[1]{First Author}
+\author[1]{Second Author}
+\affil[1]{Affiliation, Address\\
+  \texttt{email@example.com}}
+
+\date{\today}
+
+%--------- Document ----------
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  % このツール Splatone の概要を1段落で記述してください。
+  This paper presents Splatone, a tool for visual exploration
+  of large geotagged image collections using color-based spatial
+  visualizations.
+\end{abstract}
+
+\section{Introduction}
+% ・問題設定: 位置情報付き画像の可視化・解析の課題
+% ・Splatone の目的と貢献
+% ・本論文の構成
+
+\section{Related Work}
+% 位置情報付き画像の可視化, カラーパレット生成, マップ・地理可視化などを整理
+
+\section{System Overview}
+\subsection{Data Model}
+% 画像, メタデータ (位置, タグなど) の扱い
+
+\subsection{Architecture}
+% Crawler, Plugins, Visualization Pipeline など Splatone の構成概要
+
+\section{Color-based Visualization}
+\subsection{Palette Generation}
+% `lib/paletteGenerator.js` でのパレット生成アルゴリズム概要
+
+\subsection{Visual Encodings}
+% voronoi, pie-charts, marker-cluster などのビジュアライザ概要
+
+\section{Implementation}
+% Node.js ベースの実装, プラグイン機構, Web UI など
+
+\section{Use Cases}
+% 例: Flickr 画像を用いた都市・景観の色分布解析など
+
+\section{Discussion}
+% 利点・限界・今後の展望
+
+\section{Conclusion}
+% 本ツールのまとめと今後の課題
+
+\section*{Acknowledgements}
+% 謝辞があれば記載
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

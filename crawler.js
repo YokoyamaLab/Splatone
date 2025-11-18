@@ -39,13 +39,88 @@ const VIZ_BASE = resolve(__dirname, "visualizer");
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
+const CLI_BASE_COMMAND = process.env.SPLATONE_CLI_BASE ?? 'npx -y -p splatone@latest crawler';
 let pluginsOptions = {};
 let visOptions = {};
 
 const flickrLimiter = new Bottleneck({
   maxConcurrent: 6,
-  minTime: 700, 
+  minTime: 700,
 });
+
+const VALID_UI_UNITS = new Set(['kilometers', 'meters', 'miles']);
+
+function normalizeUiCellSize(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
+    return 0;
+  }
+  return num;
+}
+
+function parseUiBbox(value) {
+  if (!value) return null;
+  const parts = String(value).split(',').map(v => Number(v.trim()));
+  if (parts.length !== 4 || parts.some(part => !Number.isFinite(part))) {
+    throw new Error('--ui-bbox must be "minLon,minLat,maxLon,maxLat"');
+  }
+  const [minLon, minLat, maxLon, maxLat] = parts;
+  if (minLon >= maxLon || minLat >= maxLat) {
+    throw new Error('--ui-bbox requires min < max for both lon and lat');
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+function extractPolygonFeature(input) {
+  if (!input) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch (err) {
+    throw new Error(`--ui-polygon must be valid GeoJSON: ${err.message}`);
+  }
+
+  const toFeature = (geometry, properties = {}) => ({
+    type: 'Feature',
+    properties,
+    geometry
+  });
+
+  if (parsed?.type === 'FeatureCollection') {
+    const target = parsed.features?.find(f => ['Polygon', 'MultiPolygon'].includes(f?.geometry?.type));
+    if (!target) {
+      throw new Error('--ui-polygon FeatureCollection must include at least one Polygon or MultiPolygon');
+    }
+    return toFeature(target.geometry, target.properties ?? {});
+  }
+
+  if (parsed?.type === 'Feature') {
+    if (!parsed.geometry || !['Polygon', 'MultiPolygon'].includes(parsed.geometry.type)) {
+      throw new Error('--ui-polygon Feature must contain Polygon or MultiPolygon geometry');
+    }
+    return toFeature(parsed.geometry, parsed.properties ?? {});
+  }
+
+  if (parsed?.type === 'Polygon' || parsed?.type === 'MultiPolygon') {
+    return toFeature(parsed, {});
+  }
+
+  throw new Error('--ui-polygon must be a Polygon/MultiPolygon geometry, Feature, or FeatureCollection');
+}
+
+function buildUiDefaults(argv) {
+  const cellSize = normalizeUiCellSize(argv['ui-cell-size']);
+  const unitsInput = argv['ui-units'];
+  const units = VALID_UI_UNITS.has(unitsInput) ? unitsInput : 'kilometers';
+  const bbox = parseUiBbox(argv['ui-bbox']);
+  const polygon = argv['ui-polygon'] ? extractPolygonFeature(argv['ui-polygon']) : null;
+  return {
+    cellSize,
+    units,
+    bbox,
+    polygon
+  };
+}
 
 try {
 
@@ -146,7 +221,7 @@ try {
       group: 'Basic Options',
       alias: 'f',
       type: 'boolean',
-      default: true,
+      default: false,
       description: '大きなデータをファイルとして送受信する'
     }).option('chopped', {
       group: 'Basic Options',
@@ -165,6 +240,25 @@ try {
       type: 'boolean',
       default: false,
       description: 'デバッグ情報出力'
+    }).option('ui-cell-size', {
+      group: 'UI Defaults',
+      type: 'number',
+      default: 0,
+      description: '起動時にUIへ設定するセルサイズ (0で自動)'
+    }).option('ui-units', {
+      group: 'UI Defaults',
+      type: 'string',
+      choices: ['kilometers', 'meters', 'miles'],
+      default: 'kilometers',
+      description: 'セルサイズの単位 (kilometers/meters/miles)'
+    }).option('ui-bbox', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: 'UI初期表示の矩形範囲。"minLon,minLat,maxLon,maxLat" の形式'
+    }).option('ui-polygon', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: 'UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文字列'
     })
     .version()
     .coerce({
@@ -208,6 +302,14 @@ try {
   });
 
   const argv = await yargv.parseAsync();
+
+  let uiDefaults;
+  try {
+    uiDefaults = buildUiDefaults(argv);
+  } catch (err) {
+    console.error(err?.message || err);
+    process.exit(1);
+  }
 
   const visualizers = {};
   for (const vis of Object.keys(visualizers_).filter(v => argv[`vis-${v}`])) {
@@ -285,6 +387,8 @@ try {
       console.warn('[memory] Failed to read usage stats:', err?.message || err);
     }
   }
+
+
   /**
    * /api/hexgrid
    *  クエリ:
@@ -311,9 +415,16 @@ try {
       title: title,
       lat: DEFAULT_CENTER.lat,
       lon: DEFAULT_CENTER.lon,
-      defaultCellSize: 0,
-      defaultUnits: 'kilometers',
+      defaultCellSize: uiDefaults.cellSize,
+      defaultUnits: uiDefaults.units,
       defaultKeywords: argv.keywords,
+      defaultGeometry: {
+        bbox: uiDefaults.bbox,
+        polygon: uiDefaults.polygon,
+      },
+      selectedPlugin: argv.plugin,
+      selectedVisualizers: Object.keys(visualizers),
+      cliBaseCommand: CLI_BASE_COMMAND,
     });
   });
 
@@ -520,7 +631,7 @@ try {
         }
 
         // 交差隣接（共有辺で、かつ他Hexの三角形）を付与
-  const triIndex = new Map(triFeatures.map(t => [t.properties.triangleId, t]));
+        const triIndex = new Map(triFeatures.map(t => [t.properties.triangleId, t]));
         for (const list of edgeToTriangles.values()) {
           if (list.length < 2) continue; // 共有していなければ隣接なし
           // 同じ辺を共有する全三角形同士で、異なるHexのものを相互に登録
@@ -554,7 +665,7 @@ try {
         }
         crawlers[sessionId] = {};
         processing[sessionId] = 0;
-    targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
+        targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
         socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
       } catch (e) {
         console.error(e);
@@ -584,6 +695,7 @@ try {
 
   const statsItems = (crawler, target) => {
     const progress = [];
+
     const categoryCount = Object.keys(target?.categories ?? {}).length;
     const hexCount = target?.hex?.features?.length ?? 0;
     let remaining = categoryCount * hexCount;
@@ -607,6 +719,87 @@ try {
     }
     return { progress, finish: remaining === 0 };
   };
+
+  function sanitizeCliOptions(argvInput) {
+    if (!argvInput || typeof argvInput !== 'object') return {};
+    const snapshot = {};
+    for (const [key, value] of Object.entries(argvInput)) {
+      if (key === '_' || key === '$0') continue;
+      if (typeof value === 'function') continue;
+      snapshot[key] = value;
+    }
+    return snapshot;
+  }
+
+  function summarizeCrawlerProgress(crawler = {}, target = {}) {
+    const summary = {
+      totals: {
+        hexes: target?.hex?.features?.length ?? 0,
+        triangles: target?.triangles?.features?.length ?? 0,
+        categories: Object.keys(target?.categories ?? {}).length,
+        crawled: 0,
+        remaining: 0,
+        expected: 0,
+        percent: 0
+      },
+      hexes: {}
+    };
+
+    for (const [hexId, categories] of Object.entries(crawler ?? {})) {
+      const hexStats = {
+        categories: {},
+        crawled: 0,
+        remaining: 0,
+        expected: 0,
+        percent: 0
+      };
+      for (const [categoryName, info] of Object.entries(categories ?? {})) {
+        const crawled = info?.ids instanceof Set
+          ? info.ids.size
+          : Number(info?.crawled) || 0;
+        const remaining = Number(info?.remaining) || 0;
+        const total = Number.isFinite(info?.total)
+          ? Number(info.total)
+          : crawled + remaining;
+        const percent = total === 0 ? 1 : Math.min(1, crawled / Math.max(1, total));
+        hexStats.categories[categoryName] = {
+          crawled,
+          remaining,
+          total,
+          percent,
+          final: info?.final === true
+        };
+        hexStats.crawled += crawled;
+        hexStats.remaining += remaining;
+        hexStats.expected += total;
+      }
+      hexStats.percent = hexStats.expected === 0
+        ? 1
+        : Math.min(1, hexStats.crawled / Math.max(1, hexStats.expected));
+      summary.hexes[hexId] = hexStats;
+      summary.totals.crawled += hexStats.crawled;
+      summary.totals.remaining += hexStats.remaining;
+      summary.totals.expected += hexStats.expected;
+    }
+
+    summary.totals.percent = summary.totals.expected === 0
+      ? 1
+      : Math.min(1, summary.totals.crawled / Math.max(1, summary.totals.expected));
+
+    return summary;
+  }
+
+  function buildResultContext(crawler, target, argvInput, visualizerNames = []) {
+    return {
+      generatedAt: new Date().toISOString(),
+      hexGrid: target?.hex ?? null,
+      triangles: target?.triangles ?? null,
+      categories: target?.categories ?? {},
+      visualizers: visualizerNames,
+      cliOptions: sanitizeCliOptions(argvInput),
+      stats: summarizeCrawlerProgress(crawler, target)
+    };
+  }
 
   async function runTask_(taskName, data) {
     const { port1, port2 } = new MessageChannel();
@@ -640,10 +833,25 @@ try {
       }
       //console.log(rtn);
       sessionCrawler[rtn.hexId] ??= {};
-  sessionCrawler[rtn.hexId][rtn.category] ??= { items: featureCollection([]) };
-  sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
-  const idSet = sessionCrawler[rtn.hexId][rtn.category].ids;
+      sessionCrawler[rtn.hexId][rtn.category] ??= {};
+      sessionCrawler[rtn.hexId][rtn.category].terms ??= {};
+      if (!sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId]) {
+        //一つ上のTermIdを100%に更新。ラベルはPrefixLabelingなのでrtn.TermId.slice(0,-1)となる。
+        const prevTermId = rtn.TermId.slice(0, -1);
+        if (sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId] && !sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final) {
+          sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final = true;
+          sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].remaining = 0;
+        }
+      }
+      sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId] ??= {};
+      sessionCrawler[rtn.hexId][rtn.category].items ??= featureCollection([]);
+      sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
 
+      //定数を作って変数名が長くなるのを防ぐ
+      const currentHex = sessionCrawler[rtn.hexId];
+      const currentHexCategory = currentHex[rtn.category];
+      const idSet = currentHexCategory.ids;
+      //Setを使って重複除去
       let duplicateCount = 0;
       const uniqueFeatures = [];
       for (const feature of rtn.photos.features) {
@@ -657,10 +865,56 @@ try {
         }
         uniqueFeatures.push(feature);
       }
-  sessionCrawler[rtn.hexId][rtn.category].final = rtn.final;
-  sessionCrawler[rtn.hexId][rtn.category].crawled ??= 0;
-  sessionCrawler[rtn.hexId][rtn.category].total = rtn.final ? sessionCrawler[rtn.hexId][rtn.category].ids.size : rtn.total + sessionCrawler[rtn.hexId][rtn.category].crawled;
-  sessionCrawler[rtn.hexId][rtn.category].crawled = sessionCrawler[rtn.hexId][rtn.category].ids.size;
+
+      //進捗更新。TermIdごとにfinal/remainingを管理。
+      currentHexCategory.terms[rtn.TermId].remaining = rtn.remaining;
+      currentHexCategory.terms[rtn.TermId].final = rtn.final;
+      if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
+        console.error("[ERROR] ALL DUPLICATE");
+      }
+      const hexCategoryRemaining = Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
+      currentHexCategory.remaining = hexCategoryRemaining;
+      currentHexCategory.total = hexCategoryRemaining + idSet.size;
+      currentHexCategory.crawled = idSet.size;
+
+      const hexRemaining =Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
+      const hexProgress ={
+        percent: currentHexCategory.total === 0 ? 1 : Math.min(1, currentHexCategory.crawled / Math.max(1, currentHexCategory.total)),
+        total: currentHexCategory.total,
+      }
+      if (argv.debugVerbose) {
+        console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicateCount}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${currentHexCategory.crawled} / ${currentHexCategory.total}`);
+      }
+      const uniqueFeatureCollection = featureCollection(uniqueFeatures);
+      sessionCrawler[rtn.hexId][rtn.category].items
+        = concatFC(sessionCrawler[rtn.hexId][rtn.category].items, uniqueFeatureCollection);
+      io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex });
+      if (!rtn.final) {
+        // 次回クロール用に更新
+        rtn.nextPluginOptions.forEach((nextPluginOptions) => {
+          const workerOptionsClone = {
+            plugin: workerOptions.plugin,
+            hex: workerOptions.hex,
+            triangles: workerOptions.triangles,
+            bbox: workerOptions.bbox,
+            category: workerOptions.category,
+            tags: workerOptions.tags,
+            pluginOptions: nextPluginOptions,
+            sessionId: workerOptions.sessionId
+          };
+          api.emit('splatone:start', workerOptionsClone);
+        });
+        //} else if (finish) {
+      } else if (processing[currentSessionId] == 0) {
+        if (argv.debugVerbose) {
+          console.table(progress);
+        }
+        api.emit('splatone:finish', workerOptions);
+      }
+      /*
+      sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId].final = rtn.final;
+      sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId].remaining  = rtn.remaining;
+
 
       if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
         console.error("ALL DUPLICATE");
@@ -696,6 +950,7 @@ try {
         }
         api.emit('splatone:finish', workerOptions);
       }
+        */
     });
     const rtn = await piscina.run({ debugVerbose: argv.debugVerbose, port: port2, ...data }, { filename, transferList: [port2] });
     port1.close();
@@ -728,20 +983,42 @@ try {
     const result = crawlers[currentSessionId];
     const target = targets[currentSessionId];
 
-    let geoJson = Object.fromEntries(Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])]));
+    let geoJson = Object.fromEntries(
+      Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])])
+    );
+
+    const visualizerNames = Object.keys(visualizers);
+    const resultContext = buildResultContext(result, target, argv, visualizerNames);
+    const palette = target["splatonePalette"];
+    const resultBundle = {
+      version: 1,
+      resultId,
+      plugin: argv.plugin,
+      visualizers: visualizerNames,
+      visOptions,
+      palette,
+      context: resultContext,
+      geoJson
+    };
+    const bundleMeta = {
+      version: resultBundle.version,
+      resultId,
+      plugin: resultBundle.plugin,
+      visualizers: resultBundle.visualizers,
+      visOptions: resultBundle.visOptions,
+      palette: resultBundle.palette,
+      context: resultBundle.context
+    };
 
     //console.log('[splatone:finish]');
+    let deliveryMode = 'inline';
     try {
       if (argv.chopped || argv.filed) {
         throw new RangeError("Invalid string length");
       }
       await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
         resultId,
-        geoJson,
-        palette: target["splatonePalette"],
-        visualizers: Object.keys(visualizers),
-        plugin: argv.plugin,
-        visOptions
+        bundle: resultBundle
       });
     } catch (e) {
       if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
@@ -754,10 +1031,11 @@ try {
           class: "warning"
         });
         if (argv.chopped) {
-          //サイズ集計
-          const total_features = ((s = 0, st = [geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
+          deliveryMode = 'chunked';
+          //サイズ集計（GeoJSON部分のみカウント）
+          const total_features = ((s = 0, st = [resultBundle.geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v?.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
           let current_features = 0
-          await dfsObject(geoJson, async ({ path, value, kind, type }) => {
+          await dfsObject(resultBundle, async ({ path, value, kind, type }) => {
             if (path.length !== 0) {
               if (kind === "primitive" || kind === "null") {
                 //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
@@ -798,9 +1076,10 @@ try {
           });
           //console.log("finish chunks");
         } else {
+          deliveryMode = 'file';
           //保存ファイル送信(--filed)
           try {
-            const outPath = await saveGeoJsonObjectAsStream(geoJson, 'result.' + resultId + '.json');
+            const outPath = await saveGeoJsonObjectAsStream(resultBundle, 'result.' + resultId + '.json');
             console.log('saved:', outPath);
             const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-file', {
               resultId,
@@ -812,17 +1091,14 @@ try {
         }
         await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
           resultId,
-          geoJson: null, /*geoJsonは送らない*/
-          palette: target["splatonePalette"],
-          visualizers: Object.keys(visualizers),
-          plugin: argv.plugin,
-          visOptions
+          bundle: null,
+          meta: bundleMeta
         });
-        console.log("[Done]");
       } else {
         throw e; // 他の例外はそのまま
       }
     }
+    console.log(`[Done] resultId=${resultId} mode=${deliveryMode}`);
   });
 
   server.listen(port, async () => {
