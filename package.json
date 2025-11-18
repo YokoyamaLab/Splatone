@@ -29,6 +29,7 @@
     "@turf/turf": "^7.2.0",
     "bottleneck": "^2.19.5",
     "chroma-js": "^3.1.2",
+    "d3-contour": "^3.1.0",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
     "flickr-sdk": "^7.1.0",
