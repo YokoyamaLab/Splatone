@@ -399,13 +399,20 @@ npx -y -p splatone@latest color <count> <sets>
 npx -y -p splatone@latest color 6 3
 ```
 
-- オプション:
+- ブラウザでプレビューするか聞かれるのでYとすると、ブラウザ上で実際の色が確認できます。
+  - カラーピッカーになっていますので、微調整も可能です。
+  - カラーコードをクリックするとコピーされます。
 
-- `--no-ansi` : ANSI カラーシーケンスを出力せず、プレーンなカンマ区切りの HEX を出力します（パイプやログ向け）。
+![](assets/screenshot_color_picker.png?raw=true)
+
+- オプション:
+  - `--no-ansi` : ANSI カラーシーケンスを出力せず、プレーンなカンマ区切りの HEX を出力します（パイプやログ向け）。
 
 ```bash
 npx -y -p splatone@latest color --no-ansi 6 3
 ```
+
+
 
 ## ダウンロード
 
