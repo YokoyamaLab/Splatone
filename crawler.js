@@ -136,6 +136,7 @@ try {
     api,
     optionsById: {},
   });
+  const installedPluginIds = plugins.list();
 
   // Visualizer読み込み
   const all_visualizers = {};  // { [name: string]: class }
@@ -206,8 +207,8 @@ try {
     .option('plugin', {
       group: 'Basic Options',
       alias: 'p',
-      choices: plugins.list(),
-      demandOption: true,
+      choices: installedPluginIds,
+      demandOption: false,
       describe: '実行するプラグイン',
       type: 'string'
     })
@@ -221,7 +222,7 @@ try {
       group: 'Basic Options',
       alias: 'f',
       type: 'boolean',
-      default: false,
+      default: true,
       description: '大きなデータをファイルとして送受信する'
     }).option('chopped', {
       group: 'Basic Options',
@@ -259,6 +260,11 @@ try {
       group: 'UI Defaults',
       type: 'string',
       description: 'UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文字列'
+    }).option('browse-mode', {
+      group: 'Basic Options',
+      type: 'boolean',
+      default: false,
+      description: 'ブラウズ専用モード（範囲描画とクロールを無効化）'
     })
     .version()
     .coerce({
@@ -269,7 +275,7 @@ try {
       })()
       */
     });
-  plugins.list().forEach(async (plug) => {
+  installedPluginIds.forEach(async (plug) => {
     yargv = await plugins.call(plug, "yargv", yargv);
   })
 
@@ -287,21 +293,41 @@ try {
   });
 
   yargv = yargv.check(async (argv, options) => {
-    if (Object.keys(all_visualizers).filter(v => argv["vis-" + v]).length == 0) {
-      throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
+    const isBrowseMode = argv['browse-mode'] === true;
+    const selectedVisualizers = Object.keys(all_visualizers).filter(v => argv["vis-" + v]);
+    if (!isBrowseMode) {
+      if (!argv.plugin) {
+        throw new Error('プラグインの指定がありません。-p で実行するプラグインを指定してください。');
+      }
+      if (selectedVisualizers.length === 0) {
+        throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
+      }
+      if (argv.filed && argv.chopped) {
+        console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
+        argv.chopped = false;
+      }
+      pluginsOptions = buildPluginsOptions(argv, installedPluginIds);
+      visOptions = buildVisualizersOptions(argv, Object.keys(visualizers_));
+      pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
+    } else {
+      pluginsOptions = {};
+      visOptions = {};
+      if (argv.filed || argv.chopped) {
+        if (argv.debugVerbose) {
+          console.warn('[browse-mode] --filed/--chopped は無効化されます。');
+        }
+        argv.filed = false;
+        argv.chopped = false;
+      }
+      if (selectedVisualizers.length > 0 && argv.debugVerbose) {
+        console.warn('[browse-mode] --vis-* オプションは無視されます。');
+      }
     }
-    if (argv.filed && argv.chopped) {
-      console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
-      argv.chopped = false;
-    }
-    pluginsOptions = buildPluginsOptions(argv, plugins.list());
-    visOptions = buildVisualizersOptions(argv, Object.keys(visualizers_));
-    //console.log(visOptions);
-    pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
     return true;
   });
 
   const argv = await yargv.parseAsync();
+  const browseMode = Boolean(argv['browse-mode']);
 
   let uiDefaults;
   try {
@@ -311,14 +337,21 @@ try {
     process.exit(1);
   }
 
+  const requestedVisualizerNames = Object.keys(visualizers_).filter(v => argv[`vis-${v}`]);
+  const effectiveVisualizerNames = browseMode ? Object.keys(visualizers_) : requestedVisualizerNames;
+
   const visualizers = {};
-  for (const vis of Object.keys(visualizers_).filter(v => argv[`vis-${v}`])) {
-    visualizers[vis] = visualizers_[vis];
+  if (!browseMode) {
+    for (const vis of effectiveVisualizerNames) {
+      visualizers[vis] = visualizers_[vis];
+    }
   }
 
-  await plugins.call(argv.plugin, 'init', pluginsOptions[argv.plugin]);
+  if (!browseMode && argv.plugin) {
+    await plugins.call(argv.plugin, 'init', pluginsOptions[argv.plugin]);
+  }
   if (argv.debugVerbose) {
-    console.table([["Visualizer", Object.keys(visualizers)], ["Plugin", argv.plugin]]);
+    console.table([["Visualizer", browseMode ? effectiveVisualizerNames : Object.keys(visualizers)], ["Plugin", argv.plugin || '(browse)']]);
   }
 
 
@@ -422,9 +455,11 @@ try {
         bbox: uiDefaults.bbox,
         polygon: uiDefaults.polygon,
       },
-      selectedPlugin: argv.plugin,
-      selectedVisualizers: Object.keys(visualizers),
+      selectedPlugin: browseMode ? null : argv.plugin,
+      selectedVisualizers: browseMode ? [] : Object.keys(visualizers),
       cliBaseCommand: CLI_BASE_COMMAND,
+      browseMode,
+      clientVisualizers: browseMode ? Object.keys(all_visualizers) : Object.keys(visualizers)
     });
   });
 
@@ -446,9 +481,17 @@ try {
       //console.log("disconnected:", socket.id);
     });
 
-    socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now(), visualizers: Object.keys(visualizers) });
+    const clientVisualizerNames = browseMode ? Object.keys(all_visualizers) : Object.keys(visualizers);
+    socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now(), visualizers: clientVisualizerNames });
     //クローリング開始
     socket.on("crawling", async (req) => {
+      if (browseMode) {
+        socket.emit('toast', {
+          text: 'browseコマンドではクロールできません',
+          class: 'warning'
+        });
+        return;
+      }
 
       try {
         if (sessionId !== req.sessionId) {
@@ -473,6 +516,13 @@ try {
     });
     // クロール範囲指定
     socket.on("target", (req) => {
+      if (browseMode) {
+        socket.emit('toast', {
+          text: 'browseコマンドでは範囲を指定できません',
+          class: 'warning'
+        });
+        return;
+      }
       try {
         if (sessionId !== req.sessionId) {
           console.warn("invalid sessionId:", req.sessionId);
@@ -965,141 +1015,132 @@ try {
     idleTimeout: 10_000
   });
 
-  await subscribe('splatone:start', async workerOptions => {
-    //console.log('[splatone:start]', workerOptions);
-    const currentSessionId = workerOptions.sessionId;
-    processing[currentSessionId] = (processing[currentSessionId] ?? 0) + 1;
-    const safeOptions = JSON.parse(JSON.stringify(workerOptions, (_, value) => {
-      if (typeof value === 'function') return undefined;
-      return value;
-    }));
-    runTask(safeOptions.plugin, safeOptions);
-  });
+  if (!browseMode) {
+    await subscribe('splatone:start', async workerOptions => {
+      const currentSessionId = workerOptions.sessionId;
+      processing[currentSessionId] = (processing[currentSessionId] ?? 0) + 1;
+      const safeOptions = JSON.parse(JSON.stringify(workerOptions, (_, value) => {
+        if (typeof value === 'function') return undefined;
+        return value;
+      }));
+      runTask(safeOptions.plugin, safeOptions);
+    });
 
-  await subscribe('splatone:finish', async workerOptions => {
-    const currentSessionId = workerOptions.sessionId;
-    logHeapUsage(`after-crawl session=${currentSessionId}`);
-    const resultId = uniqid();
-    const result = crawlers[currentSessionId];
-    const target = targets[currentSessionId];
+    await subscribe('splatone:finish', async workerOptions => {
+      const currentSessionId = workerOptions.sessionId;
+      logHeapUsage(`after-crawl session=${currentSessionId}`);
+      const resultId = uniqid();
+      const result = crawlers[currentSessionId];
+      const target = targets[currentSessionId];
 
-    let geoJson = Object.fromEntries(
-      Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])])
-    );
+      let geoJson = Object.fromEntries(
+        Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])])
+      );
 
-    const visualizerNames = Object.keys(visualizers);
-    const resultContext = buildResultContext(result, target, argv, visualizerNames);
-    const palette = target["splatonePalette"];
-    const resultBundle = {
-      version: 1,
-      resultId,
-      plugin: argv.plugin,
-      visualizers: visualizerNames,
-      visOptions,
-      palette,
-      context: resultContext,
-      geoJson
-    };
-    const bundleMeta = {
-      version: resultBundle.version,
-      resultId,
-      plugin: resultBundle.plugin,
-      visualizers: resultBundle.visualizers,
-      visOptions: resultBundle.visOptions,
-      palette: resultBundle.palette,
-      context: resultBundle.context
-    };
-
-    //console.log('[splatone:finish]');
-    let deliveryMode = 'inline';
-    try {
-      if (argv.chopped || argv.filed) {
-        throw new RangeError("Invalid string length");
-      }
-      await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
+      const visualizerNames = Object.keys(visualizers);
+      const resultContext = buildResultContext(result, target, argv, visualizerNames);
+      const palette = target["splatonePalette"];
+      const resultBundle = {
+        version: 1,
         resultId,
-        bundle: resultBundle
-      });
-    } catch (e) {
-      if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
-        const msg = ((argv.chopped || argv.filed) ? "ユーザの指定により" : "結果サイズが巨大なので") + (argv.chopped ? "断片化送信" : "保存ファイル送信") + "モードでクライアントに送ります";
-        if (argv.debugVerbose) {
-          console.warn("[WARN] " + msg);
-        }
-        io.to(currentSessionId).timeout(5000).emit('toast', {
-          text: msg,
-          class: "warning"
-        });
-        if (argv.chopped) {
-          deliveryMode = 'chunked';
-          //サイズ集計（GeoJSON部分のみカウント）
-          const total_features = ((s = 0, st = [resultBundle.geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v?.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
-          let current_features = 0
-          await dfsObject(resultBundle, async ({ path, value, kind, type }) => {
-            if (path.length !== 0) {
-              if (kind === "primitive" || kind === "null") {
-                //console.log(path.join("."), "=>", `(${kind}:${type})`, value);
-                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
-                  resultId,
-                  path,
-                  kind,
-                  type,
-                  value
-                });
-                //console.log("\tACK", ackrtn);
-              } else if (kind === "object") {
-                //console.log(path.join("."), "=>", `(${kind}:${type})`);
-                if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
-                  current_features++;
-                }
-                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
-                  resultId,
-                  path,
-                  kind,
-                  type,
-                  progress: { current: current_features, total: total_features }
-                });
-                //console.log("\tACK", ackrtn);
-              } else if (kind === "array") {
-                //console.log(path.join("."), "=>", `(${kind}:${type})`);              
-                const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
-                  resultId,
-                  path,
-                  kind,
-                  type
-                });
-                //console.log("\tACK", ackrtn);
-              }
-            } else {
-              //console.log("SKIP---------------------");
-            }
-          });
-          //console.log("finish chunks");
-        } else {
-          deliveryMode = 'file';
-          //保存ファイル送信(--filed)
-          try {
-            const outPath = await saveGeoJsonObjectAsStream(resultBundle, 'result.' + resultId + '.json');
-            console.log('saved:', outPath);
-            const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-file', {
-              resultId,
-            });
-          } catch (err) {
-            console.error('failed:', err);
-            process.exitCode = 1;
-          }
+        plugin: argv.plugin,
+        visualizers: visualizerNames,
+        visOptions,
+        palette,
+        context: resultContext,
+        geoJson
+      };
+      const bundleMeta = {
+        version: resultBundle.version,
+        resultId,
+        plugin: resultBundle.plugin,
+        visualizers: resultBundle.visualizers,
+        visOptions: resultBundle.visOptions,
+        palette: resultBundle.palette,
+        context: resultBundle.context
+      };
+
+      //console.log('[splatone:finish]');
+      let deliveryMode = 'inline';
+      try {
+        if (argv.chopped || argv.filed) {
+          throw new RangeError("Invalid string length");
         }
         await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
           resultId,
-          bundle: null,
-          meta: bundleMeta
+          bundle: resultBundle
         });
-      } else {
-        throw e; // 他の例外はそのまま
+      } catch (e) {
+        if (e instanceof RangeError && /Invalid string length/.test(String(e.message))) {
+          const msg = ((argv.chopped || argv.filed) ? "ユーザの指定により" : "結果サイズが巨大なので") + (argv.chopped ? "断片化送信" : "保存ファイル送信") + "モードでクライアントに送ります";
+          if (argv.debugVerbose) {
+            console.warn("[WARN] " + msg);
+          }
+          io.to(currentSessionId).timeout(5000).emit('toast', {
+            text: msg,
+            class: "warning"
+          });
+          if (argv.chopped) {
+            deliveryMode = 'chunked';
+            //サイズ集計（GeoJSON部分のみカウント）
+            const total_features = ((s = 0, st = [resultBundle.geoJson], v, seen = new WeakSet) => { for (; st.length;)if ((v = st.pop()) && typeof v === 'object' && !seen.has(v)) { seen.add(v); if (Array.isArray(v?.features)) s += v.features.length; for (const k in v) { const x = v[k]; if (x && typeof x === 'object') st.push(x) } } return s })();
+            let current_features = 0
+            await dfsObject(resultBundle, async ({ path, value, kind, type }) => {
+              if (path.length !== 0) {
+                if (kind === "primitive" || kind === "null") {
+                  const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
+                    resultId,
+                    path,
+                    kind,
+                    type,
+                    value
+                  });
+                } else if (kind === "object") {
+                  if (path.at(-2) == "features" && Number.isInteger(path.at(-1))) {
+                    current_features++;
+                  }
+                  const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
+                    resultId,
+                    path,
+                    kind,
+                    type,
+                    progress: { current: current_features, total: total_features }
+                  });
+                } else if (kind === "array") {
+                  const ackrtn = await io.to(currentSessionId).timeout(120000).emitWithAck('result-chunk', {
+                    resultId,
+                    path,
+                    kind,
+                    type
+                  });
+                }
+              }
+            });
+          } else {
+            deliveryMode = 'file';
+            try {
+              const outPath = await saveGeoJsonObjectAsStream(resultBundle, 'result.' + resultId + '.json');
+              console.log('saved:', outPath);
+              await io.to(currentSessionId).timeout(120000).emitWithAck('result-file', {
+                resultId,
+              });
+            } catch (err) {
+              console.error('failed:', err);
+              process.exitCode = 1;
+            }
+          }
+          await io.to(currentSessionId).timeout(120000).emitWithAck('result', {
+            resultId,
+            bundle: null,
+            meta: bundleMeta
+          });
+        } else {
+          throw e; // 他の例外はそのまま
+        }
       }
-    }
-    console.log(`[Done] resultId=${resultId} mode=${deliveryMode}`);
-  });
+      console.log(`[Done] resultId=${resultId} mode=${deliveryMode}`);
+    });
+  }
 
   server.listen(port, async () => {
     //console.log(`Server running at http://localhost:${port}`);

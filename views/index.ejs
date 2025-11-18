@@ -31,10 +31,14 @@
 
     <div class="panel-body">
       <section class="panel-section">
+        <% if (browseMode) { %>
+        <p class="muted">browseモードでは地図の閲覧のみ可能です。範囲描画とクロール開始は無効化されています。</p>
+        <% } else { %>
         <p class="muted">
           地図上で <strong>矩形をドラッグ</strong> して BBOX を指定してください。<br>
           クリックした三角形と、<em>共有辺を持つ別Hexの三角形</em>が同時にハイライトされます。
         </p>
+        <% } %>
       </section>
 
       <section class="panel-section">
@@ -93,6 +97,15 @@
   <!-- パネルの背面オーバーレイ -->
   <div id="panelOverlay" class="panel-overlay" hidden></div>
 
+  <% if (browseMode) { %>
+  <div id="dropOverlay" class="drop-overlay" hidden>
+    <div class="drop-overlay__inner">
+      <p class="drop-overlay__title">結果ファイルをドロップ</p>
+      <p class="drop-overlay__subtitle">crawlerのresult*.jsonやエクスポートJSONを読み込めます</p>
+    </div>
+  </div>
+  <% } %>
+
   <!-- 地図 -->
   <div id="map"></div>
 
@@ -114,6 +127,7 @@
     const lat = <%= lat %>;
     const lon = <%= lon %>;
     const defaultGeometry = <%- JSON.stringify(defaultGeometry || {}) %>;
+    const browseMode = <%- JSON.stringify(Boolean(browseMode)) %>;
     const cliContext = {
       baseCommand: <%- JSON.stringify(cliBaseCommand || '') %>,
       plugin: <%- JSON.stringify(selectedPlugin || '') %>,
@@ -511,9 +525,153 @@
     let latestFile = null;
     const overlays = {};
     const resultExtras = {};
+
+    async function visualizeBundle(bundle, { sourceLabel = 'server' } = {}) {
+      await welcomeReady;
+      if (!bundle || typeof bundle !== 'object') {
+        Toastify({
+          text: '結果データを読み込めませんでした',
+          duration: 4000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-error'
+        }).showToast();
+        return false;
+      }
+
+      clearHexHighlight();
+      const geoJson = bundle.geoJson ?? {};
+      const palette = bundle.palette ?? {};
+      const visOptionsFromServer = bundle.visOptions ?? {};
+
+      renderStatsPanel(bundle.context?.stats ?? null);
+      bundle.extra = {
+        ...(bundle.extra ?? {}),
+        ...resultExtras
+      };
+      latestResult = bundle;
+      latestFile = null;
+
+      const bundleHexGrid = bundle.context?.hexGrid ?? bundle.extra?.hex ?? null;
+      let bundleTriangles = bundle.context?.triangles ?? null;
+      if (!bundleTriangles) {
+        const extraTriangles = bundle.extra?.triangles;
+        if (Array.isArray(extraTriangles)) {
+          bundleTriangles = extraTriangles.find((entry) => entry?.type === 'FeatureCollection') ?? null;
+        } else if (extraTriangles?.type === 'FeatureCollection') {
+          bundleTriangles = extraTriangles;
+        }
+      }
+      if (bundleHexGrid || bundleTriangles) {
+        refreshGridLayers(bundleHexGrid ?? null, bundleTriangles ?? null, { addToMap: false });
+      }
+
+      if (layerControl) {
+        map.removeControl(layerControl);
+        layerControl = null;
+      }
+
+      Object.keys(overlays).forEach((key) => {
+        const layer = overlays[key];
+        if (!layer) return;
+        if (typeof layer.remove === 'function') {
+          try { layer.remove(); } catch (err) { console.warn('failed to remove layer', err); }
+        } else if (typeof layer.removeFrom === 'function') {
+          try { layer.removeFrom(map); } catch (err) { console.warn('failed to remove layer', err); }
+        } else if (layer instanceof L.Layer) {
+          try { map.removeLayer(layer); } catch (err) { console.warn('failed to remove layer', err); }
+        }
+        delete overlays[key];
+      });
+
+      for (const vis of Object.keys(visualizers)) {
+        const handler = visualizers[vis];
+        if (typeof handler !== 'function') continue;
+        let layers = null;
+        try {
+          layers = await handler(map, geoJson[vis], {
+            palette,
+            visOptions: visOptionsFromServer[vis]
+          });
+        } catch (err) {
+          console.error(`[visualizer:${vis}] failed`, err);
+          continue;
+        }
+        if (!layers) continue;
+        if (isPlainObject(layers) && !layers.type) {
+          for (const name in layers) {
+            overlays[`[${vis}] ${name}`] = layers[name];
+          }
+        } else {
+          overlays[`[${vis}]`] = layers;
+        }
+      }
+
+      if (myProgress) {
+        map.removeControl(myProgress);
+        myProgress = null;
+      }
+      if (myLegend) {
+        map.removeControl(myLegend);
+        myLegend = null;
+      }
+      document.getElementById('map_legend')?.replaceChildren();
+      myLegend = new BottomLeftLegend().addTo(map);
+      const ul = document.createElement('div');
+      ul.className = 'legend_ul';
+      const paletteEntries = Object.entries(palette).map(([category, colors]) => ({
+        category,
+        fill: colors?.color ?? '#ffffff',
+        stroke: colors?.darken ?? colors?.color ?? '#ffffff'
+      }));
+      ul.innerHTML = generateLegend(paletteEntries);
+      document.getElementById('map_legend')?.appendChild(ul);
+
+      const overlayOptions = { ...overlays };
+      if (drawnItems && drawnItems.getLayers().length > 0) {
+        overlayOptions['Boundary'] = drawnItems;
+      }
+      if (hexLayer) {
+        overlayOptions['Hex Grid'] = hexLayer;
+      }
+      if (triLayer) {
+        overlayOptions['Tri Grid'] = triLayer;
+      }
+
+      if (layerControl) {
+        map.removeControl(layerControl);
+      }
+      layerControl = L.control.layers([baseLayer], overlayOptions, {
+        position: 'topleft'
+      });
+      layerControl.addTo(map);
+
+      const downloadBtn = document.getElementById('download-json');
+      if (downloadBtn && downloadBtn.dataset.bound !== '1') {
+        downloadBtn.dataset.bound = '1';
+        downloadBtn.addEventListener('click', async () => {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          if (latestFile === null) {
+            if (latestResult) {
+              downloadJSON(`splatone-${stamp}.json`, latestResult);
+            }
+          } else {
+            await downloadJSONFile(`splatone-${stamp}.json`, latestFile);
+          }
+        });
+      }
+
+      Toastify({
+        text: `結果を読み込みました (${sourceLabel})`,
+        duration: 2600,
+        gravity: 'bottom',
+        position: 'center',
+        className: 'toast-success'
+      }).showToast();
+      return true;
+    }
     socket.on('result', async (res, callback) => {
       let bundle = res.bundle ?? null;
-      clearHexHighlight();
       if (!bundle) {
         bundle = results[res.resultId];
       } else {
@@ -524,74 +682,10 @@
         callback({ pong: Date.now(), ok: false });
         return;
       }
-      const geoJson = bundle.geoJson ?? {};
-      const palette = bundle.palette ?? {};
-      const visOptionsFromServer = bundle.visOptions ?? {};
-      renderStatsPanel(bundle.context?.stats ?? null);
-      bundle.extra = {
-        ...(bundle.extra ?? {}),
-        ...resultExtras
-      };
-      latestResult = bundle;
-      latestFile = null;
-      for (const vis in visualizers) {
-        const layers = await visualizers[vis](map, geoJson[vis], {
-          palette,
-          visOptions: visOptionsFromServer[vis]
-        });
-        //console.log("【レイヤ】\n", JSON.stringify(layers,null,4));
-        if ((layers == null)) {
-          //SKIP
-        } else if (layers.hasOwnProperty("type") && layers["type"] == "FeatureCollection") {
-          //レイヤ一つ
-          overlays[`[${vis}]`] = layers;
-        } else {
-          for (const name in layers) {
-            //console.log("Lay", vis, name);
-            overlays[`[${vis}] ${name}`] = layers[name];
-          }
-        }
-      }
-      //進捗バーを消して凡例を表示
-      if (myProgress) map.removeControl(myProgress);
-      myLegend = new BottomLeftLegend().addTo(map);
-      document.getElementById('map_legend')?.replaceChildren();
-      const ul = document.createElement('div');
-      ul.className = 'legend_ul';
-      const paletteEntries = [];
-      for (const cat in palette) {
-        paletteEntries.push({
-          category: cat,
-          fill: palette[cat].color,
-          stroke: palette[cat].darken
-        });
-      }
-      ul.innerHTML = generateLegend(paletteEntries);
-      //console.log(overlays);
-      layerControl = L.control.layers([baseLayer], {
-        ...overlays,
-        "Boundary": drawnItems,
-        "Hex Grid": hexLayer,
-        "Tri Grid": triLayer
-      }, {
-        position: 'topleft'
-      });
-      layerControl.addTo(map);
-      document.getElementById("map_legend")?.appendChild(ul);
-      document.getElementById("download-json").addEventListener("click", async () => {
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        if(latestFile===null){
-          if(latestResult){
-            downloadJSON(`splatone-${stamp}.json`, latestResult);
-          }
-        }else{
-          await downloadJSONFile(`splatone-${stamp}.json`, latestFile);
-        }
-        let sessionId = null;
-      });
+      const success = await visualizeBundle(bundle, { sourceLabel: 'server' });
       callback({
         pong: Date.now(),
-        ok: true
+        ok: Boolean(success)
       });
     });
 
@@ -627,32 +721,30 @@
     map.addLayer(drawnItems);
 
     // Draw control（矩形・ポリゴンのみ）
-    const drawControl = new L.Control.Draw({
-      position: 'topleft',
-      draw: {
-        polygon: {
-          allowIntersection: false,
-          showArea: true,
-          metric: true,
-        },
-        polyline: false,
-        marker: false,
-        circle: false,
-        circlemarker: false,
-        rectangle: {
-          shapeOptions: {
-            weight: 1,
-            fillOpacity: 0
+    let drawControl = null;
+    if (!browseMode) {
+      drawControl = new L.Control.Draw({
+        position: 'topleft',
+        draw: {
+          polygon: {
+            allowIntersection: false,
+            showArea: true,
+            metric: true,
+          },
+          polyline: false,
+          marker: false,
+          circle: false,
+          circlemarker: false,
+          rectangle: {
+            shapeOptions: {
+              weight: 1,
+              fillOpacity: 0
+            }
           }
-        }
-      },
-      /* edit: {
-        featureGroup: drawnItems,
-        edit: true,
-        remove: true
-      }*/
-    });
-    map.addControl(drawControl);
+        },
+      });
+      map.addControl(drawControl);
+    }
 
     //印刷
     L.easyPrint({
@@ -734,138 +826,160 @@
       }
     }
 
-    // Hex / Triangles を描画
-    function renderLayers(hexFC, trianglesFC) {
-      if (hexLayer) map.removeLayer(hexLayer);
-      if (triLayer) map.removeLayer(triLayer);
-  document.getElementById('map_legend')?.replaceChildren();
-  if (myLegend) map.removeControl(myLegend);
-  if (myStartBtn) map.removeControl(myStartBtn);
+    function refreshGridLayers(hexFC = null, trianglesFC = null, { addToMap = true } = {}) {
+      const hexWasVisible = hexLayer ? map.hasLayer(hexLayer) : false;
+      const triWasVisible = triLayer ? map.hasLayer(triLayer) : false;
+
+      if (hexLayer) {
+        map.removeLayer(hexLayer);
+        hexLayer = null;
+      }
+      if (triLayer) {
+        map.removeLayer(triLayer);
+        triLayer = null;
+      }
       hexLayerIndex = {};
       triLayerIndex = {};
 
-      // 六角形
-      hexLayer = L.geoJSON(hexFC, {
-        style: {
-          weight: 2,
-          opacity: 0.5,
-          fillOpacity: 0.1,
-          color: "#37474F",
-          fillColor: "#546E7A",
-        },
-        onEachFeature: (feature, layer) => {
-          const hid = feature.properties?.hexId;
-          if (hid != null) hexLayerIndex[hid] = layer;
-          const triIds = feature.properties?.triIds?.length ? feature.properties.triIds.join(', ') : 'N/A';
-          layer.bindPopup(`Hex ID: ${hid}<br>Triangles: ${triIds}`);
+      if (hexFC) {
+        const nextHexLayer = L.geoJSON(hexFC, {
+          style: {
+            weight: 2,
+            opacity: 0.5,
+            fillOpacity: 0.1,
+            color: "#37474F",
+            fillColor: "#546E7A",
+          },
+          onEachFeature: (feature, layer) => {
+            const hid = feature.properties?.hexId;
+            if (hid != null) hexLayerIndex[hid] = layer;
+            const triIds = feature.properties?.triIds?.length ? feature.properties.triIds.join(', ') : 'N/A';
+            layer.bindPopup(`Hex ID: ${hid}<br>Triangles: ${triIds}`);
+          }
+        });
+        hexLayer = nextHexLayer;
+        if (addToMap || hexWasVisible) {
+          nextHexLayer.addTo(map);
         }
-      }).addTo(map);
+      }
 
-      const BottomLeftPanel = L.Control.extend({
-        options: {
-          position: 'bottomleft'
-        },
-        onAdd(map) {
-          const div = L.DomUtil.create('div', 'map-bottom-left-control');
-          div.innerHTML = `
+      if (trianglesFC) {
+        const nextTriLayer = L.geoJSON(trianglesFC, {
+          style: {
+            weight: 1,
+            opacity: 0.8,
+            fillOpacity: 0,
+            fillColor: "#EC407A",
+            color: "#F50057",
+            dashArray: "15,30",
+            dashOffset: 0,
+          },
+          onEachFeature: (feature, layer) => {
+            const pid = feature.properties?.parentHexId ?? 'N/A';
+            const tid = feature.properties?.triangleId ?? 'N/A';
+            const cross = feature.properties?.crossNeighbors ?? [];
+            const neighborHexIds = feature.properties?.neighborHexIds ?? [];
+
+            triLayerIndex[tid] = layer;
+
+            layer.bindPopup(
+              `Triangle: ${tid}<br>` +
+              `Parent Hex: ${pid}<br>` +
+              `Cross neighbors: ${cross.length ? cross.join(', ') : 'None'}<br>` +
+              `Neighbor Hexes: ${neighborHexIds.length ? neighborHexIds.join(', ') : 'None'}`
+            );
+
+            layer.on('click', () => {
+              clearHexHighlight();
+              clearTriHighlight();
+              highlightHexById(pid);
+              highlightTriangle(tid, {
+                weight: 3,
+                opacity: 1,
+                fillOpacity: 0.30
+              });
+
+              cross.forEach(cid => {
+                highlightTriangle(cid, {
+                  weight: 2,
+                  opacity: 1,
+                  fillOpacity: 0.25
+                });
+                const neighborLayer = triLayerIndex[cid];
+                if (neighborLayer) {
+                  const pHex = neighborLayer.feature?.properties?.parentHexId;
+                  if (pHex != null) highlightHexById(pHex);
+                }
+              });
+            });
+
+            layer.on('mouseout', () => {
+              clearTriHighlight();
+            });
+          }
+        });
+        triLayer = nextTriLayer;
+        if (addToMap || triWasVisible) {
+          nextTriLayer.addTo(map);
+        }
+      }
+    }
+
+    // Hex / Triangles を描画
+    function renderLayers(hexFC, trianglesFC) {
+      document.getElementById('map_legend')?.replaceChildren();
+      if (myLegend) map.removeControl(myLegend);
+      if (myStartBtn) map.removeControl(myStartBtn);
+
+      refreshGridLayers(hexFC, trianglesFC, { addToMap: true });
+
+      if (!browseMode) {
+        const BottomLeftPanel = L.Control.extend({
+          options: {
+            position: 'bottomleft'
+          },
+          onAdd(map) {
+            const div = L.DomUtil.create('div', 'map-bottom-left-control');
+            div.innerHTML = `
       <div class="panel-contents">
         <button class="btn"id="doSomething">Start Crawling!</button>
       </div>`;
-          // コントロール内の操作が地図ドラッグに奪われないようにする
-          L.DomEvent.disableClickPropagation(div);
-          L.DomEvent.disableScrollPropagation(div);
+            L.DomEvent.disableClickPropagation(div);
+            L.DomEvent.disableScrollPropagation(div);
 
-          const btn = div.querySelector('#doSomething');
-          btn.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation(); // 念のため地図へのバブリングも止める
-            if (myStartBtn) map.removeControl(myStartBtn);
-            myProgress = new BottomLeftProgressBar().addTo(map);
-            // ---- 任意の処理 ----
-            socket.emit("crawling", {
-              sessionId: sessionId,
-            });
-          }, {
-            once: true
-          });
-
-          return div;
-        }
-      });
-      myStartBtn = new BottomLeftPanel().addTo(map);
-
-      // 三角形
-      triLayer = L.geoJSON(trianglesFC, {
-        style: {
-          weight: 1,
-          opacity: 0.8,
-          fillOpacity: 0,
-          fillColor: "#EC407A",
-          color: "#F50057",
-          dashArray: "15,30",
-          dashOffset: 0,
-        },
-        onEachFeature: (feature, layer) => {
-          const pid = feature.properties?.parentHexId ?? 'N/A';
-          const tid = feature.properties?.triangleId ?? 'N/A';
-          const cross = feature.properties?.crossNeighbors ?? [];
-          const neighborHexIds = feature.properties?.neighborHexIds ?? [];
-
-          triLayerIndex[tid] = layer;
-
-          layer.bindPopup(
-            `Triangle: ${tid}<br>` +
-            `Parent Hex: ${pid}<br>` +
-            `Cross neighbors: ${cross.length ? cross.join(', ') : 'None'}<br>` +
-            `Neighbor Hexes: ${neighborHexIds.length ? neighborHexIds.join(', ') : 'None'}`
-          );
-
-          layer.on('click', () => {
-            // クリック時：当該三角形＋交差隣接三角形をハイライト
-            clearHexHighlight();
-            clearTriHighlight();
-            highlightHexById(pid); // 親Hexも強調
-            highlightTriangle(tid, {
-              weight: 3,
-              opacity: 1,
-              fillOpacity: 0.30
-            }); // クリック対象
-
-            // 隣接（別Hex）の三角形を同時に強調
-            cross.forEach(cid => {
-              highlightTriangle(cid, {
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.25
+            const btn = div.querySelector('#doSomething');
+            btn.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (myStartBtn) map.removeControl(myStartBtn);
+              myProgress = new BottomLeftProgressBar().addTo(map);
+              socket.emit("crawling", {
+                sessionId: sessionId,
               });
-              // その親Hexも薄く強調
-              const neighborLayer = triLayerIndex[cid];
-              if (neighborLayer) {
-                const pHex = neighborLayer.feature?.properties?.parentHexId;
-                if (pHex != null) highlightHexById(pHex);
-              }
+            }, {
+              once: true
             });
-          });
 
-          // マウスアウトで三角形のハイライトだけ戻す（Hexは維持）
-          layer.on('mouseout', () => {
-            clearTriHighlight();
-          });
-        }
-      });
+            return div;
+          }
+        });
+        myStartBtn = new BottomLeftPanel().addTo(map);
+      }
 
-      triLayer.addTo(map);
-
-      // ビュー調整
-      const layers = [hexLayer, triLayer];
-      const bounds = L.featureGroup(layers).getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, {
-        padding: [20, 20]
-      });
+      const layers = [hexLayer, triLayer].filter(Boolean);
+      if (layers.length > 0) {
+        const bounds = L.featureGroup(layers).getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, {
+          padding: [20, 20]
+        });
+      }
     }
 
     // API呼び出し
     async function loadHexgridByBounds(bounds, drawn = null, shapeKind = null) {
+      if (browseMode) {
+        return;
+      }
       currentBboxArray = [
         Number(bounds.getWest().toFixed(6)),
         Number(bounds.getSouth().toFixed(6)),
@@ -905,57 +1019,133 @@
       });
     }
 
-    // Draw イベント
-    map.on(L.Draw.Event.CREATED, async (e) => {
-      drawnItems.clearLayers();
-      const layer = e.layer;
-      layer.__splatoneShape = e.layerType === 'rectangle' ? 'rectangle' : 'polygon';
-      drawnItems.addLayer(layer);
-      try {
-        await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), layer.__splatoneShape);
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-
-    map.on(L.Draw.Event.EDITSTOP, async () => {
-      const layers = drawnItems.getLayers();
-      if (layers.length === 1) {
+    if (!browseMode) {
+      map.on(L.Draw.Event.CREATED, async (e) => {
+        drawnItems.clearLayers();
+        const layer = e.layer;
+        layer.__splatoneShape = e.layerType === 'rectangle' ? 'rectangle' : 'polygon';
+        drawnItems.addLayer(layer);
         try {
-          const layer = layers[0];
-          const shapeKind = layer.__splatoneShape || (layer instanceof L.Rectangle ? 'rectangle' : 'polygon');
-          await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), shapeKind);
+          await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), layer.__splatoneShape);
         } catch (err) {
           alert(err.message);
         }
-      }
-    });
+      });
 
-    map.on(L.Draw.Event.DELETED, () => {
-      drawnItems.clearLayers();
-      if (hexLayer) {
-        map.removeLayer(hexLayer);
-        hexLayer = null;
+      map.on(L.Draw.Event.EDITSTOP, async () => {
+        const layers = drawnItems.getLayers();
+        if (layers.length === 1) {
+          try {
+            const layer = layers[0];
+            const shapeKind = layer.__splatoneShape || (layer instanceof L.Rectangle ? 'rectangle' : 'polygon');
+            await loadHexgridByBounds(layer.getBounds(), layer.toGeoJSON(), shapeKind);
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+      });
+
+      map.on(L.Draw.Event.DELETED, () => {
+        drawnItems.clearLayers();
+        if (hexLayer) {
+          map.removeLayer(hexLayer);
+          hexLayer = null;
+        }
+        if (triLayer) {
+          map.removeLayer(triLayer);
+          triLayer = null;
+        }
+        if (myStartBtn) {
+          map.removeControl(myStartBtn);
+          myStartBtn = null;
+        }
+        if (myLegend) {
+          document.getElementById('map_legend')?.replaceChildren();
+          map.removeControl(myLegend);
+          myLegend = null;
+        }
+        document.getElementById('bboxLabel').textContent = '';
+        currentDrawnGeoJSON = null;
+        currentDrawKind = null;
+        currentBboxArray = null;
+        updateCliCommand();
+      });
+    }
+
+    if (browseMode) {
+      initDropImport();
+    }
+
+    function initDropImport() {
+      const overlay = document.getElementById('dropOverlay');
+      if (!overlay) return;
+      let dragDepth = 0;
+      const showOverlay = () => {
+        overlay.hidden = false;
+        overlay.classList.add('visible');
+      };
+      const hideOverlay = () => {
+        overlay.classList.remove('visible');
+        overlay.hidden = true;
+      };
+      const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+
+      window.addEventListener('dragenter', (event) => {
+        if (!hasFiles(event)) return;
+        dragDepth += 1;
+        showOverlay();
+        event.preventDefault();
+      });
+      window.addEventListener('dragover', (event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      });
+      window.addEventListener('dragleave', (event) => {
+        if (dragDepth > 0) {
+          dragDepth -= 1;
+        }
+        if (dragDepth <= 0) {
+          dragDepth = 0;
+          hideOverlay();
+        }
+      });
+      window.addEventListener('drop', async (event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        dragDepth = 0;
+        hideOverlay();
+        const file = event.dataTransfer?.files?.[0] ?? null;
+        if (file) {
+          await importResultFile(file);
+        }
+      });
+    }
+
+    async function importResultFile(file) {
+      try {
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (err) {
+          throw new Error('JSONとして解析できませんでした');
+        }
+        const bundle = parsed?.bundle ?? parsed;
+        if (!bundle || typeof bundle !== 'object' || !bundle.geoJson) {
+          throw new Error('結果バンドルではありません');
+        }
+        await visualizeBundle(bundle, { sourceLabel: file.name || 'file' });
+      } catch (err) {
+        Toastify({
+          text: `読み込みに失敗しました: ${err?.message || err}`,
+          duration: 4000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-error'
+        }).showToast();
       }
-      if (triLayer) {
-        map.removeLayer(triLayer);
-        triLayer = null;
-      }
-      if (myStartBtn) {
-        map.removeControl(myStartBtn);
-        myStartBtn = null;
-      }
-      if (myLegend) {
-        document.getElementById('map_legend')?.replaceChildren();
-        map.removeControl(myLegend);
-        myLegend = null;
-      }
-      document.getElementById('bboxLabel').textContent = '';
-      currentDrawnGeoJSON = null;
-      currentDrawKind = null;
-      currentBboxArray = null;
-      updateCliCommand();
-    });
+    }
 
     // ======= ハンバーガー / パネル制御 =======
     const hamburger = document.getElementById('hamburger');
@@ -1033,7 +1223,7 @@
       }
     }
 
-    if (defaultGeometry?.polygon || Array.isArray(defaultGeometry?.bbox)) {
+    if (!browseMode && (defaultGeometry?.polygon || Array.isArray(defaultGeometry?.bbox))) {
       applyDefaultGeometry().catch((err) => console.error('Failed to apply default geometry', err));
     }
   </script>
