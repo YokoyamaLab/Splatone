@@ -13,6 +13,8 @@
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
 \usepackage{authblk}
 \usepackage{url}
 \usepackage{hyperref}
@@ -43,37 +45,175 @@
 \end{abstract}
 
 \section{Introduction}
-% ・問題設定: 位置情報付き画像の可視化・解析の課題
-% ・Splatone の目的と貢献
-% ・本論文の構成
+近年，Flickr をはじめとする写真共有サービスや，SNS 上で投稿される写真には位置情報が付与されることが一般的になり，大規模な位置情報付き画像コレクションが容易に取得できるようになっている．
+これらのデータは，人々の移動や観光行動，都市空間の使われ方など，従来の調査では把握が難しかった現象を分析するための有力な情報源として注目されている．
+一方で，位置情報付き画像は空間的・時間的に不均一かつ量が膨大であり，単純に地図上にマーカとして表示するだけでは，全体の傾向や特徴的なパターンを把握することが難しい．
+
+こうした課題に対し，地理空間上での分布や時空間パターンを可視化・解析するための手法がこれまでに多数提案されている．
+例えば，K{\'a}d{\'a}r ら\cite{kadar2013wheredotouristsgo} は観光客によって撮影された位置情報付き写真の空間分布を解析し，観光地内での人気エリアや動線を明らかにしている．
+また，Kisilevich ら\cite{kisilevich2010eventbased} は Flickr および Panoramio の画像を用いてイベントに関連する人々の活動パターンを抽出し，クラスタリング結果を地図上に可視化している．
+これらの研究は，位置情報付き写真が観光や都市解析に有用であることを示しているが，可視化の多くは密度マップやクラスタ境界の表示に留まっており，色やカテゴリ情報を手がかりにした多面的な可視化環境は必ずしも十分ではない．
+
+本研究では，位置情報付き画像コレクションの色彩情報と位置情報を統合的に扱う可視化ツール Splatone を提案する．
+Splatone は，画像から抽出した代表色に基づくカラーパレット生成と，地理空間上の Voronoi 分割，クラスタリング，グリッド集計など複数の可視化手法を組み合わせることで，撮影位置分布だけでなく，景観の色彩傾向やカテゴリごとの空間配置を直感的に把握できることを目指す．
+また，ツール本体はプラグイン機構を備えており，新たなデータソースや可視化手法を容易に追加できる点も特徴である．
+
+本論文の構成は次のとおりである．
+第\ref{sec:related}章では，位置情報付き写真の可視化および分析に関する関連研究を概観する．
+第\ref{sec:overview}章では，Splatone のデータモデルとシステム構成を説明する．
+第\ref{sec:colorviz}章では，本研究で実装したカラーベースの可視化手法と，各 visualizer の役割について述べる．
+第\ref{sec:implementation}章では，実装上の工夫やプラグイン機構について説明し，第\ref{sec:usecases}章で利用事例を示す．
+最後に，第\ref{sec:discussion}章および第\ref{sec:conclusion}章で考察と結論を述べる．
 
 \section{Related Work}
-% 位置情報付き画像の可視化, カラーパレット生成, マップ・地理可視化などを整理
+\label{sec:related}
+位置情報付き写真を利用した可視化および分析に関する研究は，観光行動の解析，都市空間の理解，イベント検出など多様な文脈で行われている．
+K{\'a}d{\'a}r ら\cite{kadar2013wheredotouristsgo} は，Flickr などから収集した位置情報付き写真を用いて，観光客がどこへ行くのかを可視化し，観光地における人気スポットや移動パターンを明らかにした．
+彼らは写真の空間分布を地図上に表示しつつ，滞在時間や移動経路を解析することで，観光行動の偏りやホットスポットを定量的に評価している．
+
+Kisilevich ら\cite{kisilevich2010eventbased} は，Flickr および Panoramio の位置情報付き画像コレクションに対しクラスタリングを適用し，イベントに関連する人々の活動パターンを抽出する手法を提案した．
+クラスタ境界を凸包として可視化することで，特定イベントに紐づく空間的な広がりや集積度を地図上で把握できる．
+Hu ら\cite{hu2015extractingAOI} は，複数都市の位置情報付き写真から，都市内の関心領域（Area of Interest）を抽出し，土地利用との関係を分析している．
+Lee ら\cite{lee2014exploration} は，データマイニング手法を用いて位置情報付き写真のクラスタリングやパターン抽出を行い，地理空間的な利用パターンの理解に貢献している．
+
+これらの研究はいずれも，位置情報付き写真が観光・都市解析の有効な情報源であることを示すとともに，空間分布やクラスタ構造の可視化に主眼を置いている．
+一方で，写真に含まれる色やカテゴリといった視覚的特徴を，地理空間上の表現と密接に結びつけて対話的に探索できる汎用ツールはまだ限られている．
+本研究の Splatone は，色彩情報と空間情報を同時に扱う複数の visualizer を統合的に提供する点で，既存研究を補完する可視化環境を目指している．
 
 \section{System Overview}
+\label{sec:overview}
 \subsection{Data Model}
 % 画像, メタデータ (位置, タグなど) の扱い
 
 \subsection{Architecture}
-% Crawler, Plugins, Visualization Pipeline など Splatone の構成概要
+Splatone の全体構成を図~\ref{fig:architecture} に示す．
+本ツールは大きく，(1) 画像およびメタデータを取得する Crawler 層，(2) 取得データに対して前処理やカラーパレット生成・空間集計を行うコアライブラリ層，(3) 各種 visualizer を通じて結果を提示する Web UI 層から構成される．
+
+Crawler 層では，Flickr などの外部サービス API からクエリ条件に応じて画像を取得し，位置情報やタグ，撮影時刻などのメタデータとともにローカルストレージに保存する．
+この処理は `crawler.js` および `plugins/flickr/` 以下のプラグインで実装されており，データソースごとにプラグインを差し替えることで，他のサービスにも容易に拡張できる．
+
+コアライブラリ層では，`lib/` 以下のモジュール群が，画像集合に対する色特徴抽出，カラーパレット生成，空間クラスタリング，グリッド集計などを担う．
+`splatone.js` はこれらの機能をコマンドラインツールとして統合し，ユーザから与えられたパラメータに基づいて処理パイプラインを組み立てるエントリポイントである．
+
+Web UI 層では，サーバ側が処理結果を JSON 等の形式で提供し，クライアント側の visualizer（`visualizer/` 以下） が地図表示やインタラクションを担当する．
+ユーザはブラウザ上で visualizer を切り替えつつ，パラメータを変更しながら結果を即座に確認できるため，試行錯誤的な探索が容易になる．
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[font=\small, node distance=8mm and 8mm,
+    box/.style={draw, rounded corners, minimum width=30mm, minimum height=10mm, align=center},
+    smallbox/.style={draw, rounded corners, minimum width=24mm, minimum height=7mm, align=center, fill=gray!5},
+    >=Stealth]
+
+    % External sources
+    \node[box] (external) {外部データソース\\Flickr API など};
+
+    % Crawler layer
+    \node[box, right=of external, xshift=5mm] (crawler) {Crawler 層};
+    \node[smallbox, above=of crawler] (crawlerjs) {crawler.js};
+    \node[smallbox, below=of crawler] (flickr) {plugins/flickr};
+
+    % Core library layer
+    \node[box, right=of crawler, xshift=8mm] (core) {コアライブラリ層\\(lib/, splatone.js)};
+    \node[smallbox, above=of core] (color) {色特徴抽出・\\パレット生成};
+    \node[smallbox, below=of core] (agg) {空間集計・\\クラスタリング};
+
+    % Web UI layer
+    \node[box, right=of core, xshift=8mm] (web) {Web UI 層};
+    \node[smallbox, above=of web] (server) {サーバ側\\(public/, views/)};
+    \node[smallbox, below=of web] (viz) {visualizer\\(voronoi, dbscan,\\heat, majority-hex,\\marker-cluster, pie-charts)};
+
+    % User
+    \node[box, right=of web, xshift=6mm] (user) {ユーザ\\ブラウザで探索};
+
+    % Arrows main flow
+    \draw[->] (external) -- node[above]{画像・メタデータ要求} (crawler);
+    \draw[->] (crawler) -- node[above]{取得データ} (core);
+    \draw[->] (core) -- node[above]{集計結果 (JSON 等)} (web);
+    \draw[->] (web) -- node[above]{可視化結果} (user);
+
+    % Internal connections
+    \draw[->] (crawlerjs) -- (crawler);
+    \draw[->] (flickr) -- (crawler);
+    \draw[->] (color) -- (core);
+    \draw[->] (agg) -- (core);
+    \draw[->] (server) -- (web);
+    \draw[->] (viz) -- (web);
+
+  \end{tikzpicture}
+  \caption{Splatone の全体アーキテクチャ．Crawler 層が外部サービスから画像とメタデータを取得し，コアライブラリ層が色特徴抽出や空間集計を行い，Web UI 層が各種 visualizer を通じて結果を提示する。}
+  \label{fig:architecture}
+\end{figure}
 
 \section{Color-based Visualization}
+\label{sec:colorviz}
 \subsection{Palette Generation}
-% `lib/paletteGenerator.js` でのパレット生成アルゴリズム概要
+Splatone では，位置情報付き画像集合に対して色の要約表現を与えるために，カラーパレットを自動生成する．
+各画像から代表色を抽出し，色空間上でクラスタリングを行うことで，地域やカテゴリごとの典型的な色を少数の色で表現する．
+この処理は `lib/paletteGenerator.js` に実装されており，パラメータによってクラスタ数や色空間の扱いを調整可能である．
+
+生成されたパレットは，後述する各種可視化手法に共通に用いられ，カテゴリごとの色付けや，空間分布の差異の強調に寄与する．
 
 \subsection{Visual Encodings}
-% voronoi, pie-charts, marker-cluster などのビジュアライザ概要
+Splatone は，同一の入力データに対して複数の可視化手法（visualizer）を提供することで，ユーザが目的に応じて視点を切り替えながら探索できるようにしている．
+本節では，現在実装されている代表的な visualizer として，Voronoi 図ベースの可視化，DBSCAN によるクラスタリング可視化，ヒートマップ，可視化過半数色による六角グリッド表示，マーカクラスタリング，可視化円グラフによるカテゴリ分布表示，Voronoi 分割に基づく代替表現などを概説する．
+
+\subsubsection{Voronoi-based Visualization}
+Voronoi 可視化では，地理空間上の画像位置を種点として Voronoi 分割を行い，各領域を対応する画像の代表色またはカテゴリ色で塗り分ける．
+これにより，撮影位置の疎密や局所的な色の変化が連続的な領域として表現され，都市景観や水域の境界など，大まかな空間構造を直感的に把握できる．
+実装は `visualizer/voronoi/` 以下にあり，Node.js ベースの前処理と Web クライアント側の描画コードから構成される．
+
+\subsubsection{DBSCAN-based Clustering Visualization}
+DBSCAN 可視化では，位置情報を持つ画像を DBSCAN により空間クラスタリングし，各クラスタを代表色やカテゴリに応じて表示する．
+クラスタは地図上のマーカ群または領域として描画され，パラメータ（例：Eps，MinPts）の変更により，ランドマーク的な集中領域と背景的な分布を切り分けて観察できる．
+この visualizer は `visualizer/dbscan/` 以下に実装されており，コマンドライン引数からクラスタリングパラメータを指定できるようになっている．
+
+\subsubsection{Heatmap Visualization}
+ヒートマップ可視化では，画像の位置分布を連続的な密度場として推定し，地図上に色の濃淡として表示する．
+高密度領域は高輝度または高彩度で示されるため，撮影が集中している観光地や繁華街などを容易に特定できる．
+実装は `visualizer/heat/` 以下にあり，カーネル幅や正規化方法を調整することで，広域傾向の把握から局所的なホットスポットの検出まで，スケールを変えた解析が可能である．
+
+\subsubsection{Majority-hex Visualization}
+Majority-hex 可視化では，地理空間を等間隔の六角グリッドに分割し，各セル内で最も頻度の高いカテゴリや代表色を求めて表示する．
+これにより，カテゴリごとの支配的な空間分布がモザイク状に示され，道路沿いの用途変化や水域・緑地の広がりなどを俯瞰しやすくなる．
+`visualizer/majority-hex/` ディレクトリには，この処理のための Node.js スクリプトと Web 描画コードが含まれる．
+
+\subsubsection{Marker-cluster Visualization}
+Marker-cluster 可視化では，個々の画像をマーカとして表示しつつ，多数のマーカが重なり合う領域では自動的にクラスタリングして集約表示を行う．
+ユーザがズームイン・ズームアウトを繰り返すことで，広域の分布から個別画像レベルの詳細まで，スケールを連続的に変えて探索できる点が特徴である．
+`visualizer/marker-cluster/` 以下には，地図ライブラリと連携してマーカクラスタリングを行うためのコードと，スタイル指定用の `public/style.css` が用意されている．
+
+\subsubsection{Pie-charts Visualization}
+Pie-charts 可視化では，空間を一定のグリッドまたはクラスタで分割し，各セル内のカテゴリ比率を円グラフとして表示する．
+これにより，例えば水域・交通・宗教施設・緑地といったカテゴリが，都市空間のどの位置でどの程度混在しているかを同時に示すことができる．
+実装は `visualizer/pie-charts/` 以下にあり，凡例や色指定は Splatone のカラーパレット生成結果と整合が取れるよう設計されている．
+
+\subsubsection{Other Visualizers}
+上記以外にも，特定のデータセットや分析目的に応じた可視化モジュールを追加できるよう，Splatone では visualizer をプラグインとして実装している．
+新たな visualizer を実装する際には，共通のインタフェースに従うことで，既存の Crawler や Web UI との連携を最小限の変更で実現できる．
 
 \section{Implementation}
-% Node.js ベースの実装, プラグイン機構, Web UI など
+\label{sec:implementation}
+Splatone は Node.js をベースとしたツールチェインとして実装されており，画像収集を行う Crawler，カラーパレット生成や空間集計を行うライブラリ群，および可視化結果を提示する Web UI から構成される．
+ライブラリコードは主に `lib/` 以下に配置されており，`splatone.js` はコマンドラインツールとして各種処理を統合するエントリポイントの役割を担う．
+
+プラグイン機構は，`lib/PluginBase.js` と `lib/pluginLoader.js` により提供される．
+各 visualizer やデータソースは，この基底クラスを継承して必要なメソッドを実装することで，Splatone 本体から一貫した方法で呼び出せるようになっている．
+これにより，新しいデータソースや可視化手法を追加する際にも，既存のコードに対する修正を最小限に抑えつつ拡張が可能である．
+
+Web UI は `public/` および `views/` 以下に実装されており，サーバ側は Node.js の HTTP サーバとテンプレートエンジンを用いている．
+ユーザはブラウザ上で visualizer を切り替えたり，クラスタリングパラメータを調整したりしながら，画像コレクションの空間的・色彩的特徴を対話的に探索できる．
 
 \section{Use Cases}
+\label{sec:usecases}
 % 例: Flickr 画像を用いた都市・景観の色分布解析など
 
 \section{Discussion}
+\label{sec:discussion}
 % 利点・限界・今後の展望
 
 \section{Conclusion}
+\label{sec:conclusion}
 % 本ツールのまとめと今後の課題
 
 \section*{Acknowledgements}

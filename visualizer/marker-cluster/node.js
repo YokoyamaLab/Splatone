@@ -3,26 +3,36 @@ import { fileURLToPath } from 'node:url';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
 
+export const optionSchema = {
+	label: 'Marker Cluster',
+    fields: [
+        { key: 'MaxClusterRadius', label: 'Max Cluster Radius', type: 'number', min: 1, step: 1, default: 80, description: 'クラスタを構成する範囲(半径)' }
+    ]
+};
+
 
 export default class MarkerClusterVisualizer extends VisualizerBase {
     static id = 'marker-cluster';            // 一意ID（フォルダ名と一致させると運用しやすい）
     static name = 'Marker Cluster Visualizer';          // 表示名
     static version = '0.0.0';
     static description = "マーカークラスターとして地図上に表示";
+    static optionSchema = optionSchema;
+
+    static getOptionSchema() {
+        return optionSchema;
+    }
 
     constructor() {
         super();
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がビジュアライザ名) 
     }
+
+    getOptionSchema() {
+        return optionSchema;
+    }
+
     async yargv(yargv) {
-        // 必須項目にすると、このプラグインを使用しない時も必須になります。
-        // 必須項目は作らず、もしプラグインを使う上での制約違反はinitで例外を投げてください。
-        return yargv.option(this.argKey('MaxClusterRadius'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'クラスタを構成する範囲(半径)',
-            default: 80
-        });
+        return this.applyOptionSchemaToYargs(yargv);
     }
 
     concatFC(fcA, fcB) {

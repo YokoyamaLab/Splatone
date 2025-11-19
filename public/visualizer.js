@@ -135,3 +135,23 @@ async function downloadJSONFile(downloadFileName, filePath, opts = {}) {
     clearTimeout(timer);
   }
 }
+
+async function postJson(url, payload, { timeoutMs = 20000, signal } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload ?? {}),
+      signal: signal ?? controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}

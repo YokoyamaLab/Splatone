@@ -1,9 +1,5 @@
-let booted = false;
-export default async function main(map, geojson, options = {}) {
-    //console.log("main");
-    console.log("[VIS OPTIONS]",options.visOptions);
-    if (booted) return;
-    booted = true;
+export default async function main(map, geojson = {}, options = {}) {
+    console.log("[VIS OPTIONS]", options.visOptions);
     const layers = {};
     for (const cat in geojson) {
         //console.log(cat);

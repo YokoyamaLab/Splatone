@@ -91,6 +91,17 @@
           </ul>
         </details>
       </section>
+
+      <section class="panel-section" id="rawReviewSection" hidden>
+        <h3>Visualizer オプション</h3>
+        <div class="muted" id="rawReviewHint">結果を読み込むとオプションを編集できます。</div>
+        <div id="visOptionForms"></div>
+        <div class="raw-actions">
+          <button id="applyVisOptions" class="btn" type="button" disabled>再可視化</button>
+          <button id="resetVisOptions" class="btn" type="button" disabled>リセット</button>
+        </div>
+        <div class="raw-meta" id="rawMetaInfo"></div>
+      </section>
     </div>
   </aside>
 
@@ -137,6 +148,13 @@
       path: "/socket",
       reconnection: false
     });
+
+    const VIS_FORM_STATE = {
+      defaultOptions: {},
+      currentOptions: {},
+      rawSource: null,
+      visualizerOrder: []
+    };
 
     function debounce(fn, wait = 300) {
       let timer = null;
@@ -263,6 +281,10 @@
           if (vis) parts.push(`--vis-${vis}`);
         });
       }
+      const visOptionArgs = buildVisualizerOptionArgs();
+      if (visOptionArgs.length) {
+        parts.push(...visOptionArgs);
+      }
       const keywordsInput = document.getElementById('keywords');
       const keywordsVal = keywordsInput?.value?.trim();
       if (keywordsVal) {
@@ -337,10 +359,40 @@
 
   let sessionId = null;
   let visualizers = {};
+  let visualizerOptionSchemas = {};
   let results = {};
   let files = {};
   let layerControl = null;
   const hexProgress = {};
+
+    function buildVisualizerOptionArgs() {
+      const args = [];
+      const visEntries = Object.entries(VIS_FORM_STATE.currentOptions || {});
+      if (!visEntries.length) return args;
+
+      const normalizeValue = (value) => {
+        if (value == null || value === '') return null;
+        if (typeof value === 'number') {
+          if (!Number.isFinite(value)) return null;
+          return { token: String(value), type: 'number' };
+        }
+        if (typeof value === 'boolean') {
+          return { token: value ? 'true' : 'false', type: 'boolean' };
+        }
+        return { token: quoteSingle(String(value)), type: 'string' };
+      };
+
+      visEntries.forEach(([visId, fields]) => {
+        if (!visId || typeof fields !== 'object') return;
+        Object.keys(fields).sort().forEach((key) => {
+          const normalized = normalizeValue(fields[key]);
+          if (!normalized) return;
+          const flag = `--v-${visId}-${key}`;
+          args.push(flag, normalized.token);
+        });
+      });
+      return args;
+    }
     let welcomeReadyResolve;
     const welcomeReady = new Promise((resolve) => {
       welcomeReadyResolve = resolve;
@@ -349,6 +401,7 @@
       //console.log(`welcome ${res.sessionId} at ${new Date(res.time).toLocaleTimeString()}`);
       //console.log("VIS", res.visualizers);
       sessionId = res.sessionId;
+      visualizerOptionSchemas = res.optionSchemas || {};
       visualizers = Object.fromEntries(await Promise.all(res.visualizers.map(async vis => {
         const m = await import(new URL(`./visualizer/${vis}/web.js`,
           import.meta.url).href);
@@ -543,6 +596,14 @@
       const geoJson = bundle.geoJson ?? {};
       const palette = bundle.palette ?? {};
       const visOptionsFromServer = bundle.visOptions ?? {};
+      const rawMeta = bundle.raw ?? null;
+
+      VIS_FORM_STATE.defaultOptions = JSON.parse(JSON.stringify(visOptionsFromServer || {}));
+      VIS_FORM_STATE.currentOptions = JSON.parse(JSON.stringify(visOptionsFromServer || {}));
+      VIS_FORM_STATE.rawSource = rawMeta || null;
+      VIS_FORM_STATE.visualizerOrder = bundle.visualizers || Object.keys(geoJson) || [];
+      updateVisOptionPanel();
+      updateCliCommand();
 
       renderStatsPanel(bundle.context?.stats ?? null);
       bundle.extra = {
@@ -1122,6 +1183,13 @@
       });
     }
 
+    document.getElementById('applyVisOptions')?.addEventListener('click', () => {
+      applyVisOptionChanges();
+    });
+    document.getElementById('resetVisOptions')?.addEventListener('click', () => {
+      resetVisOptions();
+    });
+
     async function importResultFile(file) {
       try {
         const text = await file.text();
@@ -1130,6 +1198,14 @@
           parsed = JSON.parse(text);
         } catch (err) {
           throw new Error('JSONとして解析できませんでした');
+        }
+        if (parsed && typeof parsed === 'object' && parsed.crawler && parsed.target) {
+          const response = await postJson('/api/revisualize', { rawPayload: parsed });
+          if (!response?.ok || !response.bundle) {
+            throw new Error(response?.error || '再可視化エンドポイントがエラーを返しました');
+          }
+          await visualizeBundle(response.bundle, { sourceLabel: file.name || 'raw file' });
+          return;
         }
         const bundle = parsed?.bundle ?? parsed;
         if (!bundle || typeof bundle !== 'object' || !bundle.geoJson) {
@@ -1144,6 +1220,172 @@
           position: 'center',
           className: 'toast-error'
         }).showToast();
+      }
+    }
+
+    function resetVisOptions() {
+      VIS_FORM_STATE.currentOptions = JSON.parse(JSON.stringify(VIS_FORM_STATE.defaultOptions || {}));
+      updateVisOptionFormValues();
+      updateCliCommand();
+    }
+
+    function updateVisOptionFormValues() {
+      const formRows = document.querySelectorAll('[data-vis-option="row"]');
+      formRows.forEach((row) => {
+        const vis = row.dataset.visId;
+        const field = row.dataset.fieldKey;
+        const input = row.querySelector('input, select');
+        if (!input || !vis || !field) return;
+        const value = VIS_FORM_STATE.currentOptions?.[vis]?.[field];
+        if (value == null || value === '') {
+          input.value = '';
+        } else if (input.type === 'number') {
+          input.value = Number(value);
+        } else if (input.type === 'checkbox') {
+          input.checked = Boolean(value);
+        } else {
+          input.value = value;
+        }
+      });
+    }
+
+    function updateVisOptionPanel() {
+      const section = document.getElementById('rawReviewSection');
+      const container = document.getElementById('visOptionForms');
+      const hint = document.getElementById('rawReviewHint');
+      const applyBtn = document.getElementById('applyVisOptions');
+      const resetBtn = document.getElementById('resetVisOptions');
+      const meta = document.getElementById('rawMetaInfo');
+      if (!section || !container || !applyBtn || !resetBtn) return;
+
+      const visOrder = Array.isArray(VIS_FORM_STATE.visualizerOrder) ? VIS_FORM_STATE.visualizerOrder : [];
+      if (!visOrder.length || !VIS_FORM_STATE.rawSource) {
+        section.hidden = true;
+        container.innerHTML = '';
+        applyBtn.disabled = true;
+        resetBtn.disabled = true;
+        hint.hidden = false;
+        meta.textContent = '';
+        return;
+      }
+
+      section.hidden = false;
+      hint.hidden = true;
+      container.innerHTML = '';
+      applyBtn.disabled = false;
+      resetBtn.disabled = false;
+      const metaParts = [];
+      if (VIS_FORM_STATE.rawSource?.sessionId) metaParts.push(`session ${VIS_FORM_STATE.rawSource.sessionId}`);
+      if (VIS_FORM_STATE.rawSource?.fileName) metaParts.push(`file ${VIS_FORM_STATE.rawSource.fileName}`);
+      if (VIS_FORM_STATE.rawSource?.type) metaParts.push(`source ${VIS_FORM_STATE.rawSource.type}`);
+      meta.textContent = metaParts.join(' / ');
+
+      visOrder.forEach((visName) => {
+        const schema = visualizerOptionSchemas?.[visName];
+        if (!schema || !Array.isArray(schema.fields) || !schema.fields.length) return;
+        const card = document.createElement('div');
+        card.className = 'vis-option-card';
+        const title = document.createElement('h4');
+        title.textContent = schema.label || visName;
+        card.appendChild(title);
+        const grid = document.createElement('div');
+        grid.className = 'vis-option-grid';
+        schema.fields.forEach((field) => {
+          const row = document.createElement('label');
+          row.dataset.visOption = 'row';
+          row.dataset.visId = visName;
+          row.dataset.fieldKey = field.key;
+          const span = document.createElement('span');
+          span.textContent = field.label || field.key;
+          row.appendChild(span);
+          let input;
+          if (field.type === 'select' && Array.isArray(field.options)) {
+            input = document.createElement('select');
+            field.options.forEach((opt) => {
+              const option = document.createElement('option');
+              option.value = opt;
+              option.textContent = opt;
+              input.appendChild(option);
+            });
+          } else if (field.type === 'boolean') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+          } else {
+            input = document.createElement('input');
+            input.type = field.type === 'number' ? 'number' : 'text';
+            if (field.placeholder) input.placeholder = field.placeholder;
+            if (field.step != null) input.step = field.step;
+            if (field.min != null) input.min = field.min;
+            if (field.max != null) input.max = field.max;
+          }
+          input.dataset.visId = visName;
+          input.dataset.fieldKey = field.key;
+          input.addEventListener('input', handleVisOptionInput);
+          if (input.type === 'checkbox') {
+            input.addEventListener('change', handleVisOptionInput);
+          }
+          row.appendChild(input);
+          grid.appendChild(row);
+        });
+        card.appendChild(grid);
+        container.appendChild(card);
+      });
+
+      updateVisOptionFormValues();
+    }
+
+    function handleVisOptionInput(event) {
+      const input = event.currentTarget;
+      const vis = input?.dataset?.visId;
+      const fieldKey = input?.dataset?.fieldKey;
+      if (!vis || !fieldKey) return;
+      VIS_FORM_STATE.currentOptions[vis] ??= {};
+      let value = input.value;
+      if (input.type === 'number') {
+        const num = Number(value);
+        value = Number.isFinite(num) ? num : undefined;
+      } else if (input.type === 'checkbox') {
+        value = Boolean(input.checked);
+      }
+      if (value === '' || value === undefined) {
+        delete VIS_FORM_STATE.currentOptions[vis][fieldKey];
+      } else {
+        VIS_FORM_STATE.currentOptions[vis][fieldKey] = value;
+      }
+      updateCliCommand();
+    }
+
+    async function applyVisOptionChanges() {
+      const applyBtn = document.getElementById('applyVisOptions');
+      if (!applyBtn) return;
+      applyBtn.disabled = true;
+      try {
+        if (!VIS_FORM_STATE.rawSource) {
+          throw new Error('raw data is not available');
+        }
+        const payload = {
+          sessionId: VIS_FORM_STATE.rawSource.sessionId,
+          rawFile: VIS_FORM_STATE.rawSource.fileName,
+          visualizers: VIS_FORM_STATE.visualizerOrder,
+          visOptions: VIS_FORM_STATE.currentOptions
+        };
+        const response = await postJson('/api/revisualize', payload);
+        if (!response?.ok) {
+          throw new Error(response?.error || 'failed');
+        }
+        if (response.bundle) {
+          await visualizeBundle(response.bundle, { sourceLabel: '再可視化' });
+        }
+      } catch (err) {
+        Toastify({
+          text: `再可視化に失敗しました: ${err?.message || err}`,
+          duration: 4000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-error'
+        }).showToast();
+      } finally {
+        applyBtn.disabled = false;
       }
     }
 

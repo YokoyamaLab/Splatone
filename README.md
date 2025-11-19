@@ -15,6 +15,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Voronoi: HexGrid単位で集約したジオタグからVoronoiセルを生成し、各Hexのポリゴンでクリップして表示
 - Heat: ヒートマップ
 - Pie Charts: 円グラフグリッド
+- DBSCAN: ジオタグをDBSCANクラスタリングし、各クラスタの凸包をポリゴンとして表示
 
 ## Change Log
 
@@ -25,6 +26,8 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
   * ハンバーガーメニューの拡充
     * 結果の統計情報の追加
     * CLIコマンドの表示
+* **[可視化モジュール]** `--vis-dbscan` 追加
+  * DBSCANクラスタリング結果を凸包ポリゴンで可視化
 * カラーパレット生成ツールの改良
   * ブラウザ上でカラーの確認と調整を可能に
 
@@ -101,13 +104,15 @@ For flickr Plugin
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
       --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763465845]
+                                               [文字列] [デフォルト: 1763517169]
       --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
                                                       [真偽] [デフォルト: false]
+      --vis-dbscan          クロール結果をDBSCANクラスタリングし、クラスタの凸包
+                            をポリゴンで可視化します。[真偽] [デフォルト: false]
       --vis-heat            カテゴリ毎に異なるレイヤのヒートマップで可視化（色=
                             カテゴリ色、透明度=頻度） [真偽] [デフォルト: false]
       --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
@@ -121,51 +126,87 @@ Visualization (最低一つの指定が必須です)
       --vis-voronoi         Hex Grid ボロノイ図       [真偽] [デフォルト: false]
 
 For bulky Visualizer
-      --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
+      --v-bulky-Radius       Point Markerの半径 | min=0, step=1
+                                                          [数値] [デフォルト: 5]
       --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
-      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]
-      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
+      --v-bulky-Weight       Point Markerの線の太さ | min=0, step=1
+                                                          [数値] [デフォルト: 1]
+      --v-bulky-Opacity      Point Markerの線の透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
       --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
-      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
+      --v-bulky-FillOpacity  Point Markerの塗りの透明度 | min=0, max=1,
+                             step=0.05                  [数値] [デフォルト: 0.5]
+
+For dbscan Visualizer
+      --v-dbscan-Eps             DBSCANのeps（クラスタ判定距離） | min=0.01,
+                                 step=0.01             [数値] [デフォルト: 0.02]
+      --v-dbscan-MinPts          DBSCANのminPts（クラスタ確定に必要な点数） |
+                                 min=1, step=1            [数値] [デフォルト: 6]
+      --v-dbscan-Units           epsで使用する距離単位
+       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
+                                                                   "kilometers"]
+      --v-dbscan-StrokeWidth     ポリゴン輪郭の太さ | min=0, max=10, step=0.5
+                                                          [数値] [デフォルト: 2]
+      --v-dbscan-StrokeOpacity   ポリゴン輪郭の透明度 | min=0, max=1, step=0.05
+                                                        [数値] [デフォルト: 0.9]
+      --v-dbscan-FillOpacity     ポリゴン塗りの透明度 | min=0, max=1, step=0.05
+                                                       [数値] [デフォルト: 0.35]
+      --v-dbscan-DashArray       LeafletのdashArray指定（例: "4 6"） | 例: 例: 4
+                                 6                     [文字列] [デフォルト: ""]
+      --v-dbscan-KernelScale     KDEカーネル半径をepsに対して何倍にするか |
+                                 min=0.1, max=10, step=0.1[数値] [デフォルト: 1]
+      --v-dbscan-GridSize        KDE計算用グリッド解像度（長辺方向セル数） |
+                                 min=8, max=256, step=1  [数値] [デフォルト: 80]
+      --v-dbscan-ContourPercent  最大密度に対する等値線レベル（0-1） | min=0.05,
+                                 max=0.95, step=0.05    [数値] [デフォルト: 0.4]
 
 For heat Visualizer
-      --v-heat-Radius      ヒートマップブラーの半径  [数値] [デフォルト: 0.0005]
-      --v-heat-MinOpacity  ヒートマップの最小透明度       [数値] [デフォルト: 0]
-      --v-heat-MaxOpacity  ヒートマップの最大透明度       [数値] [デフォルト: 1]
+      --v-heat-Radius      ヒートマップブラーの半径 | min=0, step=0.0001
+                                                     [数値] [デフォルト: 0.0005]
+      --v-heat-MinOpacity  ヒートマップの最小透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 0]
+      --v-heat-MaxOpacity  ヒートマップの最大透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
       --v-heat-MaxValue    ヒートマップ強度の最大値
-                           (未指定時はデータから自動推定)                 [数値]
+                           (未指定時はデータから自動推定) | step=1        [数値]
 
 For majority-hex Visualizer
       --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
                                                       [真偽] [デフォルト: false]
-      --v-majority-hex-HexOpacity   六角形の線の透明度    [数値] [デフォルト: 1]
-      --v-majority-hex-HexWeight    六角形の線の太さ      [数値] [デフォルト: 1]
-      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度
-                                                        [数値] [デフォルト: 0.9]
-      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度
-                                                        [数値] [デフォルト: 0.5]
+      --v-majority-hex-HexOpacity   六角形の線の透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
+      --v-majority-hex-HexWeight    六角形の線の太さ | min=0, step=1
+                                                          [数値] [デフォルト: 1]
+      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度 | min=0, max=1,
+                                    step=0.05           [数値] [デフォルト: 0.9]
+      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度 | min=0, max=1,
+                                    step=0.05           [数値] [デフォルト: 0.5]
 
 For marker-cluster Visualizer
-      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
-                                                         [数値] [デフォルト: 80]
+      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径) | min=1,
+                                           step=1        [数値] [デフォルト: 80]
 
 For pie-charts Visualizer
       --v-pie-charts-MaxRadiusScale     Hex内接円半径に対する最大半径スケール
-                                        (0-1.5)         [数値] [デフォルト: 0.9]
-      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1)
+                                        (0-1.5) | min=0.1, max=1.5, step=0.05
+                                                        [数値] [デフォルト: 0.9]
+      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1) |
+                                        min=0, max=1, step=0.05
                                                        [数値] [デフォルト: 0.25]
-      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px)
-                                                          [数値] [デフォルト: 1]
-      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1)
+      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px) | min=0,
+                                        step=1            [数値] [デフォルト: 1]
+      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1) |
+                                        min=0, max=1, step=0.05
                                                         [数値] [デフォルト: 0.2]
 
 For voronoi Visualizer
       --v-voronoi-MaxSitesPerHex        ポワソン分布に基づいて各ヘックス内でサン
                                         プリングされる最大サイト数 (0 = 無制限)
-                                                          [数値] [デフォルト: 0]
+                                        | min=0, step=1   [数値] [デフォルト: 0]
       --v-voronoi-MinSiteSpacingMeters  各ヘックス内でサンプリングされたサイト間
                                         の最小距離をメートル単位で保証 (0 =
-                                        無効)            [数値] [デフォルト: 50]
+                                        無効) | min=0, step=1
+                                                         [数値] [デフォルト: 50]
 
 オプション:
       --help     ヘルプを表示                                             [真偽]
@@ -381,6 +422,33 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 | `--v-voronoi-MinSiteSpacingMeters`        | Hex内の採用サイト間で確保する最小距離 (メートル)。ジオタグが密集していても空間的に均等化しつつ、MinSiteSpacingMeters範囲内で出現数の多いカテゴリを優先して残す。 | 数値 | 50         |
 
 MinSiteSpacingMetersによる間引きは、各サイト周辺 (MinSiteSpacingMeters以内) の同カテゴリ出現数を優先度として利用するため、同距離内で競合した場合も局所的に密度の高いカテゴリのサイトが採用されやすくなります。一方で密度は低いが他の場所に比べて顕著に出現するカテゴリを見逃す可能性があります。なお、Voronoi図の作成は消費メモリが大きい為、デフォルトでは50m間隔に間引きます。厳密解が必要な場合は```--v-voronoi-MinSiteSpacingMeters=0```を指定してください。ただし、その場合はヒープを使い果たしてクラッシュする可能性があります。マシンパワーに余裕がある場合は```npx --node-options='--max-old-space-size=10240'```のようにヒープサイズを拡大して実行する事も可能です。もう一つのオプション```--v-voronoi-MaxSitesPerHex```はHex内の最大アイテム数を制限するものです。ポワソンサンプリングに基づいてアイテムを間引きます。MinSiteSpacingMetersと共に、適切な結果が得られるよう調整してください。
+
+### DBSCAN: KDE等値線ポリゴンでクラスタを表示
+
+HexGridに集約されたジオタグをカテゴリ毎にDBSCANクラスタリングし、そのクラスタ内部の点群に対してカーネル密度推定（KDE）を実施、指定した密度レベルの等値線を抽出してポリゴン化します。凸包よりも外形を忠実に再現しやすく、Eps/MinPtsでクラスタ粒度を、KernelScale/GridSize/ContourPercentで輪郭の滑らかさや閾値を制御できます。輪郭および塗りのスタイルも調整可能です。このVisualizerはクラスタの等高線を表示するだけですので、Bulkyと併用する事でジオタグも表示できます。
+
+![](assets/screenshot_dbscan_kyoto.png?raw=true)
+
+#### コマンド例
+ 
+```shell
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-dbscan --v-dbscan-Eps=0.25　--v-dbscan-MinPts=4 --v-dbscan-KernelScale=0.4 --v-dbscan-GridSize=30 --v-dbscan-ContourPercent=0.05 --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+#### コマンドライン引数
+
+| オプション | 説明 | 型 | デフォルト |
+| :-- | :-- | :-- | :-- |
+| `--v-dbscan-Eps` | DBSCANのeps（距離半径）。Unitsで指定した単位を使用 | 数値 | 0.6 |
+| `--v-dbscan-MinPts` | クラスタとして扱うために必要な最小ポイント数 | 数値 | 6 |
+| `--v-dbscan-Units` | epsの距離単位（kilometers/meters/miles） | 文字列 | kilometers |
+| `--v-dbscan-StrokeWidth` | ポリゴン輪郭の太さ | 数値 | 2 |
+| `--v-dbscan-StrokeOpacity` | ポリゴン輪郭の透明度 | 数値 | 0.9 |
+| `--v-dbscan-FillOpacity` | ポリゴン塗りの透明度 | 数値 | 0.35 |
+| `--v-dbscan-DashArray` | LeafletのdashArray指定（例: `"4 6"`）。空文字で実線 | 文字列 | (空) |
+| `--v-dbscan-KernelScale` | KDEカーネル半径をepsの何倍にするか（0.1〜10） | 数値 | 1 |
+| `--v-dbscan-GridSize` | KDEグリッドの長辺方向セル数（8〜256） | 数値 | 80 |
+| `--v-dbscan-ContourPercent` | 最大密度に対する等値線レベル（0.05〜0.95） | 数値 | 0.4 |
 
 ## キーワード指定方法
 

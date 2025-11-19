@@ -3,43 +3,38 @@ import { fileURLToPath } from 'node:url';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
 
+export const optionSchema = {
+	label: 'Majority Hex',
+	fields: [
+        { key: 'Hexapartite', label: 'Hexapartite', type: 'boolean', default: false, description: '中のカテゴリの頻度に応じて六角形を分割色彩' },
+        { key: 'HexOpacity', label: 'Line Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 1, description: '六角形の線の透明度' },
+        { key: 'HexWeight', label: 'Line Weight', type: 'number', min: 0, step: 1, default: 1, description: '六角形の線の太さ' },
+        { key: 'MaxOpacity', label: 'Max Fill Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, description: '正規化後の最大塗り透明度' },
+        { key: 'MinOpacity', label: 'Min Fill Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 0.5, description: '正規化後の最小塗り透明度' }
+	]
+};
+
 export default class MajorityHex extends VisualizerBase {
     static name = 'MajorityHex Visualizer';
     static version = '0.0.2';
     static description = "HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hexapartiteモードで6分割パイチャート表示。透明度は全体で正規化。";
+    static optionSchema = optionSchema;
+
+    static getOptionSchema() {
+        return optionSchema;
+    }
 
     constructor() {
         super();
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));
     }
 
+    getOptionSchema() {
+        return optionSchema;
+    }
+
     async yargv(yargv) {
-        return yargv.option(this.argKey('Hexapartite'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'boolean',
-            description: '中のカテゴリの頻度に応じて六角形を分割色彩',
-            default: false
-        }).option(this.argKey('HexOpacity'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: '六角形の線の透明度',
-            default: 1
-        }).option(this.argKey('HexWeight'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: '六角形の線の太さ',
-            default: 1
-        }).option(this.argKey('MaxOpacity'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: '正規化後の最大塗り透明度',
-            default: 0.9
-        }).option(this.argKey('MinOpacity'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: '正規化後の最小塗り透明度',
-            default: 0.5
-        });
+        return this.applyOptionSchemaToYargs(yargv);
     }
 
     getFutureCollection(result, target, visOptions) {

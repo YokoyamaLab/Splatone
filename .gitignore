@@ -138,3 +138,5 @@ dist
 .API_KEY.*
 debug.*
 result.*
+
+tmp/

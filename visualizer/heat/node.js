@@ -3,37 +3,37 @@ import { fileURLToPath } from 'node:url';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 import { featureCollection } from "@turf/turf";
 
+export const optionSchema = {
+	label: 'Heatmap',
+	fields: [
+        { key: 'Radius', label: 'Radius', type: 'number', min: 0, step: 0.0001, default: 0.0005, description: 'ヒートマップブラーの半径' },
+        { key: 'MinOpacity', label: 'Min Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 0, description: 'ヒートマップの最小透明度' },
+        { key: 'MaxOpacity', label: 'Max Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 1, description: 'ヒートマップの最大透明度' },
+        { key: 'MaxValue', label: 'Max Value', type: 'number', step: 1, allowEmpty: true, description: 'ヒートマップ強度の最大値 (未指定時はデータから自動推定)' }
+	]
+};
+
 export default class HeatVisualizer extends VisualizerBase {
     static name = 'Heat Visualizer';
     static version = '0.0.0';
     static description = "カテゴリ毎に異なるレイヤのヒートマップで可視化（色=カテゴリ色、透明度=頻度）";
+    static optionSchema = optionSchema;
+
+    static getOptionSchema() {
+        return optionSchema;
+    }
 
     constructor() {
         super();
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));
     }
 
+    getOptionSchema() {
+        return optionSchema;
+    }
+
     async yargv(yargv) {
-        return yargv.option(this.argKey('Radius'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'ヒートマップブラーの半径',
-            default: 0.0005
-        }).option(this.argKey('MinOpacity'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'ヒートマップの最小透明度',
-            default: 0
-        }).option(this.argKey('MaxOpacity'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'ヒートマップの最大透明度',
-            default: 1
-        }).option(this.argKey('MaxValue'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'ヒートマップ強度の最大値 (未指定時はデータから自動推定)'
-        });
+        return this.applyOptionSchemaToYargs(yargv);
     }
 
     getFutureCollection(result, target, visOptions) {
