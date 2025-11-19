@@ -387,12 +387,14 @@ MinSiteSpacingMetersによる間引きは、各サイト周辺 (MinSiteSpacingMe
 
 ### DBSCAN: KDE等値線ポリゴンでクラスタを表示
 
-HexGridに集約されたジオタグをカテゴリ毎にDBSCANクラスタリングし、そのクラスタ内部の点群に対してカーネル密度推定（KDE）を実施、指定した密度レベルの等値線を抽出してポリゴン化します。凸包よりも外形を忠実に再現しやすく、Eps/MinPtsでクラスタ粒度を、KernelScale/GridSize/ContourPercentで輪郭の滑らかさや閾値を制御できます。輪郭および塗りのスタイルも従来通り調整可能です。
+HexGridに集約されたジオタグをカテゴリ毎にDBSCANクラスタリングし、そのクラスタ内部の点群に対してカーネル密度推定（KDE）を実施、指定した密度レベルの等値線を抽出してポリゴン化します。凸包よりも外形を忠実に再現しやすく、Eps/MinPtsでクラスタ粒度を、KernelScale/GridSize/ContourPercentで輪郭の滑らかさや閾値を制御できます。輪郭および塗りのスタイルも調整可能です。このVisualizerはクラスタの等高線を表示するだけですので、Bulkyと併用する事でジオタグも表示できます。
+
+![](assets/screenshot_dbscan_kyoto.png?raw=true)
 
 #### コマンド例
-
+ 
 ```shell
-$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait|緑地#00a73d=forest,woods,trees|交通#aaaaaa=road,street,bridge" --vis-dbscan --v-dbscan-Eps=0.7 --v-dbscan-MinPts=8 --v-dbscan-FillOpacity=0.45 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-dbscan --v-dbscan-Eps=0.25　--v-dbscan-MinPts=4 --v-dbscan-KernelScale=0.4 --v-dbscan-GridSize=30 --v-dbscan-ContourPercent=0.05 --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 #### コマンドライン引数

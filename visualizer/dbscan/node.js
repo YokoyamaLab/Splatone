@@ -1,13 +1,29 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
-import { featureCollection, clustersDbscan, convex, buffer } from '@turf/turf';
+import { featureCollection, clustersDbscan, convex, buffer, bbox as turfBbox } from '@turf/turf';
 import { contours as d3Contours } from 'd3-contour';
 
 const DEFAULT_UNITS = 'kilometers';
 const MIN_GRID_CELLS = 8;
 const MAX_GRID_CELLS = 256;
 const MAX_KERNEL_SCALE = 10;
+
+export const optionSchema = {
+	label: 'DBSCAN Cluster Hulls',
+	fields: [
+		{ key: 'Eps', label: 'Eps', type: 'number', min: 0.01, step: 0.01, default: 0.02, description: 'DBSCANのeps（クラスタ判定距離）' },
+		{ key: 'MinPts', label: 'MinPts', type: 'number', min: 1, step: 1, default: 6, description: 'DBSCANのminPts（クラスタ確定に必要な点数）' },
+		{ key: 'Units', label: 'Units', type: 'select', options: ['kilometers', 'meters', 'miles'], default: DEFAULT_UNITS, description: 'epsで使用する距離単位' },
+		{ key: 'StrokeWidth', label: 'Stroke Width', type: 'number', min: 0, max: 10, step: 0.5, default: 2, description: 'ポリゴン輪郭の太さ' },
+		{ key: 'StrokeOpacity', label: 'Stroke Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 0.9, description: 'ポリゴン輪郭の透明度' },
+		{ key: 'FillOpacity', label: 'Fill Opacity', type: 'number', min: 0, max: 1, step: 0.05, default: 0.35, description: 'ポリゴン塗りの透明度' },
+		{ key: 'DashArray', label: 'Dash Array', type: 'text', placeholder: '例: 4 6', default: '', description: 'LeafletのdashArray指定（例: "4 6"）' },
+		{ key: 'KernelScale', label: 'Kernel Scale', type: 'number', min: 0.1, max: 10, step: 0.1, default: 1, description: 'KDEカーネル半径をepsに対して何倍にするか' },
+		{ key: 'GridSize', label: 'Grid Size', type: 'number', min: MIN_GRID_CELLS, max: MAX_GRID_CELLS, step: 1, default: 80, description: 'KDE計算用グリッド解像度（長辺方向セル数）' },
+		{ key: 'ContourPercent', label: 'Contour Percent', type: 'number', min: 0.05, max: 0.95, step: 0.05, default: 0.4, description: '最大密度に対する等値線レベル（0-1）' }
+	]
+};
 
 const clamp = (value, min, max) => {
 	if (!Number.isFinite(value)) return min;
@@ -98,6 +114,75 @@ function mapGridToLonLat(x, y, bounds, cols, rows) {
 	return [lon, lat];
 }
 
+function computeDatasetBbox(target) {
+	if (target?.hex?.type === 'FeatureCollection') {
+		try {
+			return turfBbox(target.hex);
+		} catch {
+			// ignore and fallback
+		}
+	}
+	if (target?.triangles?.type === 'FeatureCollection') {
+		try {
+			return turfBbox(target.triangles);
+		} catch {
+			// ignore
+		}
+	}
+	return null;
+}
+
+function computeClusterCentroid(points, fallbackBounds) {
+	if (Array.isArray(points) && points.length > 0) {
+		let sumX = 0;
+		let sumY = 0;
+		for (const pt of points) {
+			if (!Array.isArray(pt) || pt.length < 2) continue;
+			sumX += pt[0];
+			sumY += pt[1];
+		}
+		const count = points.length;
+		if (count > 0) {
+			return [sumX / count, sumY / count];
+		}
+	}
+	if (Array.isArray(fallbackBounds) && fallbackBounds.length === 4) {
+		return [
+			(fallbackBounds[0] + fallbackBounds[2]) / 2,
+			(fallbackBounds[1] + fallbackBounds[3]) / 2
+		];
+	}
+	return [0, 0];
+}
+
+function computeClusterAnchor(bounds, datasetBbox, clusterPoints, precomputedCentroid) {
+	const referenceBounds = Array.isArray(datasetBbox) ? datasetBbox : bounds;
+	const [refMinX, refMinY, refMaxX, refMaxY] = referenceBounds;
+	const refCenterX = (refMinX + refMaxX) / 2;
+	const refCenterY = (refMinY + refMaxY) / 2;
+	const refSpanX = Math.max(1e-4, refMaxX - refMinX);
+	const refSpanY = Math.max(1e-4, refMaxY - refMinY);
+	const clusterCentroid = precomputedCentroid ?? computeClusterCentroid(clusterPoints, bounds);
+	const clusterWidth = Math.max(1e-4, bounds[2] - bounds[0]);
+	const clusterHeight = Math.max(1e-4, bounds[3] - bounds[1]);
+	const horizontalDir = clusterCentroid[0] >= refCenterX ? 1 : -1;
+	const verticalDir = clusterCentroid[1] >= refCenterY ? 1 : -1;
+	const offsetX = (clusterWidth / 2) + refSpanX * 0.02;
+	const offsetY = (clusterHeight / 2) + refSpanY * 0.02;
+	const extendedMarginX = refSpanX * 0.2;
+	const extendedMarginY = refSpanY * 0.2;
+	let anchorX = clusterCentroid[0] + horizontalDir * offsetX;
+	let anchorY = clusterCentroid[1] + verticalDir * offsetY;
+	const clampValue = (value, min, max) => Math.max(min, Math.min(max, value));
+	anchorX = clampValue(anchorX, refMinX - extendedMarginX, refMaxX + extendedMarginX);
+	anchorY = clampValue(anchorY, refMinY - extendedMarginY, refMaxY + extendedMarginY);
+	return {
+		anchor: [anchorX, anchorY],
+		directionX: horizontalDir,
+		directionY: verticalDir
+	};
+}
+
 function buildKdeContours(points, options) {
 	const {
 		bounds,
@@ -177,76 +262,22 @@ export default class DbscanVisualizer extends VisualizerBase {
 	static name = 'DBSCAN Cluster Hulls';
 	static version = '0.0.1';
 	static description = 'クロール結果をDBSCANクラスタリングし、クラスタの凸包をポリゴンで可視化します。';
+	static optionSchema = optionSchema;
+	static getOptionSchema() {
+		return optionSchema;
+	}
 
 	constructor() {
 		super();
 		this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));
 	}
 
+	getOptionSchema() {
+		return optionSchema;
+	}
+
 	async yargv(yargv) {
-		const group = 'For ' + this.id + ' Visualizer';
-		return yargv
-			.option(this.argKey('Eps'), {
-				group,
-				type: 'number',
-				description: 'DBSCANのeps（クラスタ判定距離）',
-				default: 0.6
-			})
-			.option(this.argKey('MinPts'), {
-				group,
-				type: 'number',
-				description: 'DBSCANのminPts（クラスタ確定に必要な点数）',
-				default: 6
-			})
-			.option(this.argKey('Units'), {
-				group,
-				type: 'string',
-				choices: ['kilometers', 'meters', 'miles'],
-				description: 'epsで使用する距離単位',
-				default: DEFAULT_UNITS
-			})
-			.option(this.argKey('StrokeWidth'), {
-				group,
-				type: 'number',
-				description: 'ポリゴン輪郭の太さ',
-				default: 2
-			})
-			.option(this.argKey('StrokeOpacity'), {
-				group,
-				type: 'number',
-				description: 'ポリゴン輪郭の透明度',
-				default: 0.9
-			})
-			.option(this.argKey('FillOpacity'), {
-				group,
-				type: 'number',
-				description: 'ポリゴン塗りの透明度',
-				default: 0.35
-			})
-			.option(this.argKey('DashArray'), {
-				group,
-				type: 'string',
-				description: 'LeafletのdashArray指定（例: "4 6"）',
-				default: ''
-			})
-			.option(this.argKey('KernelScale'), {
-				group,
-				type: 'number',
-				description: 'KDEカーネル半径をepsに対して何倍にするか',
-				default: 1
-			})
-			.option(this.argKey('GridSize'), {
-				group,
-				type: 'number',
-				description: 'KDE計算用グリッド解像度（長辺方向セル数）',
-				default: 80
-			})
-			.option(this.argKey('ContourPercent'), {
-				group,
-				type: 'number',
-				description: '最大密度に対する等値線レベル（0-1）',
-				default: 0.4
-			});
+		return this.applyOptionSchemaToYargs(yargv);
 	}
 
 	getFutureCollection(result, target, visOptions = {}) {
@@ -263,6 +294,8 @@ export default class DbscanVisualizer extends VisualizerBase {
 		const palette = target?.splatonePalette || {};
 		const epsKm = convertUnitsToKm(eps, units);
 		const kernelRadiusKm = Math.max(0.05, epsKm * kernelScale);
+		const datasetBbox = computeDatasetBbox(target);
+		const clusterLinks = [];
 
 		const categories = buildCategoryIndex(result);
 		const output = {};
@@ -359,11 +392,12 @@ export default class DbscanVisualizer extends VisualizerBase {
 				if (!kdeFeatures || kdeFeatures.length === 0) continue;
 
 				const catPalette = palette[category] || {};
+				const clusterLabel = `${category}-${clusterIndex}`;
 				for (const hull of kdeFeatures) {
 					hull.properties = {
 						...(hull.properties || {}),
 						category,
-						clusterId: `${category}-${clusterIndex}`,
+						clusterId: clusterLabel,
 						pointCount: group.length,
 						eps,
 						minPts,
@@ -376,6 +410,28 @@ export default class DbscanVisualizer extends VisualizerBase {
 					};
 					polygons.push(hull);
 				}
+				const clusterPoints = group
+					.map((feat) => {
+						const coords = feat.geometry?.coordinates;
+						return Array.isArray(coords) && coords.length >= 2 ? [coords[0], coords[1]] : null;
+					})
+					.filter(Boolean);
+				const clusterCentroid = computeClusterCentroid(clusterPoints, bounds);
+				const anchorInfo = computeClusterAnchor(bounds, datasetBbox, clusterPoints, clusterCentroid);
+				clusterLinks.push({
+					clusterId: clusterLabel,
+					category,
+					anchor: anchorInfo.anchor,
+					points: clusterPoints,
+					pointCount: group.length,
+					strokeColor: catPalette.darken || '#1f2933',
+					fillColor: catPalette.color || '#3388ff',
+					centroid: clusterCentroid,
+					labelDirection: {
+						horizontal: anchorInfo.directionX,
+						vertical: anchorInfo.directionY
+					}
+				});
 				clusterIndex += 1;
 			}
 
@@ -384,7 +440,11 @@ export default class DbscanVisualizer extends VisualizerBase {
 			}
 		}
 
-		return output;
+			if (clusterLinks.length > 0) {
+				output.__clusterLinks = clusterLinks;
+			}
+
+			return output;
 	}
 }
 

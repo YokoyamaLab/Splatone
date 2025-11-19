@@ -49,6 +49,10 @@ const flickrLimiter = new Bottleneck({
 });
 
 const VALID_UI_UNITS = new Set(['kilometers', 'meters', 'miles']);
+const RAW_FILE_BASENAME = (sessionId) => `raw.${sessionId}.json`;
+const RAW_FILE_REGEX = /^raw\.[a-zA-Z0-9_-]+\.json$/;
+
+const visualizerOptionSchemas = {};
 
 function normalizeUiCellSize(value) {
   const num = Number(value);
@@ -140,6 +144,26 @@ try {
 
   // Visualizer読み込み
   const all_visualizers = {};  // { [name: string]: class }
+  const registerOptionSchema = (name, schema) => {
+    if (!name || !schema || typeof schema !== 'object') {
+      return;
+    }
+    visualizerOptionSchemas[name] = schema;
+  };
+  const extractOptionSchemaFromVisualizer = (VisualizerClass) => {
+    if (!VisualizerClass) {
+      return null;
+    }
+    if (typeof VisualizerClass.getOptionSchema === 'function') {
+      try {
+        return VisualizerClass.getOptionSchema();
+      } catch (err) {
+        console.warn('[visualizer] failed to read option schema via getOptionSchema:', err?.message || err);
+      }
+    }
+    const schema = VisualizerClass.optionSchema;
+    return (schema && typeof schema === 'object') ? schema : null;
+  };
   // クラス判定の小ヘルパ
   const isClass = (v) =>
     typeof v === 'function' && /^class\s/.test(Function.prototype.toString.call(v));
@@ -166,6 +190,10 @@ try {
           continue;
         }
         all_visualizers[name] = Cls;
+        const schema = extractOptionSchemaFromVisualizer(Cls);
+        if (schema) {
+          registerOptionSchema(name, schema);
+        }
         //console.log(`[visualizer] loaded class for "${name}"`);
       } catch (e) {
         // node.js が無ければスキップ
@@ -358,10 +386,12 @@ try {
   const processing = {};
   const crawlers = {};
   const targets = {};
+  const rawSnapshotRegistry = new Map();
 
   // 初期中心（凱旋門）
   const DEFAULT_CENTER = { lat: 48.873611, lon: 2.294444 };
 
+  app.use(express.json({ limit: '50mb' }));
   app.use(express.static('public'));
   app.set('view engine', 'ejs');
   app.set('views', './views');
@@ -421,6 +451,213 @@ try {
     }
   }
 
+  const cloneJsonSafe = (value) => {
+    if (value == null) return value;
+    if (typeof globalThis.structuredClone === 'function') {
+      try {
+        return globalThis.structuredClone(value);
+      } catch {
+        // fall through to JSON fallback
+      }
+    }
+    return JSON.parse(JSON.stringify(value));
+  };
+
+  function simplifyCrawlerSnapshot(crawler = {}) {
+    const snapshot = {};
+    for (const [hexId, categories] of Object.entries(crawler || {})) {
+      const hexBucket = {};
+      for (const [category, info] of Object.entries(categories || {})) {
+        const items = info?.items;
+        if (!items || !Array.isArray(items.features)) continue;
+        hexBucket[category] = {
+          items: cloneJsonSafe(items),
+          crawled: info?.crawled ?? (info?.ids instanceof Set ? info.ids.size : undefined),
+          total: Number.isFinite(info?.total) ? info.total : undefined,
+          remaining: Number.isFinite(info?.remaining) ? info.remaining : undefined
+        };
+      }
+      if (Object.keys(hexBucket).length > 0) {
+        snapshot[hexId] = hexBucket;
+      }
+    }
+    return snapshot;
+  }
+
+  function buildTargetSnapshot(target = {}) {
+    return {
+      hex: cloneJsonSafe(target.hex ?? null),
+      triangles: cloneJsonSafe(target.triangles ?? null),
+      categories: cloneJsonSafe(target.categories ?? {}),
+      splatonePalette: cloneJsonSafe(target.splatonePalette ?? {})
+    };
+  }
+
+  function buildRawPayload(sessionId, crawler, target, argvInput, visualizerNames, visOptionsSnapshot, paletteSnapshot, contextSnapshot) {
+    const sanitizedCrawler = simplifyCrawlerSnapshot(crawler);
+    const targetSnapshot = buildTargetSnapshot(target ?? {});
+    const normalizedVisOptions = cloneJsonSafe(visOptionsSnapshot ?? {});
+    const normalizedPalette = cloneJsonSafe(paletteSnapshot ?? {});
+    const context = contextSnapshot ?? null;
+      return {
+        version: 1,
+        sessionId,
+        plugin: argvInput?.plugin ?? null,
+        generatedAt: context?.generatedAt ?? new Date().toISOString(),
+        visualizers: Array.isArray(visualizerNames) ? [...visualizerNames] : [],
+        visOptions: normalizedVisOptions,
+        palette: normalizedPalette,
+        target: targetSnapshot,
+        crawler: sanitizedCrawler,
+        context
+      };
+  }
+
+  function formatPublicOutPath(outPath) {
+    if (!outPath) return null;
+    const relative = path.relative('public', outPath);
+    return '/' + relative.replace(/\\/g, '/');
+  }
+
+  async function persistRawPayload(sessionId, rawPayload) {
+    const fileName = RAW_FILE_BASENAME(sessionId);
+    const outPath = await saveGeoJsonObjectAsStream(rawPayload, fileName);
+    return {
+      fileName,
+      absolutePath: outPath,
+      publicPath: formatPublicOutPath(outPath)
+    };
+  }
+
+  async function loadRawPayloadFromDisk(fileName) {
+    if (!RAW_FILE_REGEX.test(fileName)) {
+      throw new Error('raw file name is invalid');
+    }
+    const filePath = path.join('public', 'out', fileName);
+    const contents = await readFile(filePath, 'utf8');
+    return JSON.parse(contents);
+  }
+
+  function normalizeRawPayloadShape(payload) {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('raw payload must be an object');
+    }
+    const crawler = payload.crawler;
+    if (!crawler || typeof crawler !== 'object') {
+      throw new Error('raw payload is missing crawler data');
+    }
+    const context = payload.context ?? {};
+    const target = payload.target ?? {};
+    const normalizedTarget = {
+      hex: target.hex ?? context.hexGrid ?? null,
+      triangles: target.triangles ?? context.triangles ?? null,
+      categories: target.categories ?? context.categories ?? {},
+      splatonePalette: target.splatonePalette ?? payload.palette ?? {}
+    };
+    return {
+      version: payload.version ?? 1,
+      sessionId: payload.sessionId ?? null,
+      plugin: payload.plugin ?? null,
+      generatedAt: payload.generatedAt ?? context.generatedAt ?? new Date().toISOString(),
+      visualizers: Array.isArray(payload.visualizers) ? payload.visualizers : [],
+      visOptions: payload.visOptions ?? {},
+      palette: payload.palette ?? normalizedTarget.splatonePalette ?? {},
+      target: normalizedTarget,
+      crawler,
+      context: Object.keys(context).length ? context : {
+        generatedAt: payload.generatedAt ?? new Date().toISOString(),
+        hexGrid: normalizedTarget.hex,
+        triangles: normalizedTarget.triangles,
+        categories: normalizedTarget.categories,
+        cliOptions: (payload.context && payload.context.cliOptions) ? payload.context.cliOptions : {}
+      }
+    };
+  }
+
+  function cloneTargetForVisualizer(rawPayload) {
+    const sourceTarget = rawPayload?.target ?? {};
+    return {
+      hex: cloneJsonSafe(sourceTarget.hex ?? null),
+      triangles: cloneJsonSafe(sourceTarget.triangles ?? null),
+      categories: cloneJsonSafe(sourceTarget.categories ?? {}),
+      splatonePalette: cloneJsonSafe(sourceTarget.splatonePalette ?? rawPayload?.palette ?? {})
+    };
+  }
+
+  function mergeVisOptionsSnapshot(baseOptions = {}, overrides = {}) {
+    const merged = cloneJsonSafe(baseOptions);
+    for (const [visName, override] of Object.entries(overrides || {})) {
+      if (!override || typeof override !== 'object') continue;
+      merged[visName] = {
+        ...(merged[visName] ?? {}),
+        ...override
+      };
+    }
+    return merged;
+  }
+
+  function buildVisualizerDefaultOptions(visualizerNames = []) {
+    if (!Array.isArray(visualizerNames) || visualizerNames.length === 0) {
+      return {};
+    }
+    const defaults = {};
+    for (const name of visualizerNames) {
+      const schema = visualizerOptionSchemas?.[name];
+      const fields = Array.isArray(schema?.fields) ? schema.fields : null;
+      if (!fields) continue;
+      const fieldDefaults = {};
+      for (const field of fields) {
+        if (!field || typeof field !== 'object') continue;
+        const key = field.key;
+        if (!key || field.default === undefined) continue;
+        fieldDefaults[key] = field.default;
+      }
+      if (Object.keys(fieldDefaults).length > 0) {
+        defaults[name] = fieldDefaults;
+      }
+    }
+    return Object.keys(defaults).length ? cloneJsonSafe(defaults) : {};
+  }
+
+  async function resolveRawPayloadSource({ sessionId, rawFileName, inlineRaw }) {
+    if (sessionId && rawSnapshotRegistry.has(sessionId)) {
+      const entry = rawSnapshotRegistry.get(sessionId);
+      return {
+        payload: entry.payload,
+        descriptor: {
+          type: 'session',
+          sessionId,
+          fileName: entry.fileInfo?.fileName ?? null,
+          filePath: entry.fileInfo?.publicPath ?? null
+        }
+      };
+    }
+    if (rawFileName) {
+      const payload = await loadRawPayloadFromDisk(rawFileName);
+      return {
+        payload,
+        descriptor: {
+          type: 'file',
+          fileName: rawFileName,
+          filePath: `/out/${rawFileName}`
+        }
+      };
+    }
+    if (inlineRaw && typeof inlineRaw === 'object') {
+      return {
+        payload: inlineRaw,
+        descriptor: { type: 'inline', fileName: null, filePath: null }
+      };
+    }
+    return null;
+  }
+
+  function generateResultId(prefix = 'raw') {
+    const stamp = Date.now().toString(36);
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `${prefix}-${stamp}-${rand}`;
+  }
+
 
   /**
    * /api/hexgrid
@@ -463,6 +700,103 @@ try {
     });
   });
 
+  app.post('/api/revisualize', async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const {
+        sessionId: bodySessionId,
+        rawFile: rawFileName,
+        rawPayload: inlineRawPayload,
+        visualizers: requestedVisualizers,
+        visOptions: overrideVisOptions = {}
+      } = body;
+
+      const source = await resolveRawPayloadSource({
+        sessionId: bodySessionId,
+        rawFileName,
+        inlineRaw: inlineRawPayload
+      });
+      if (!source) {
+        return res.status(400).json({ error: 'raw payload is required' });
+      }
+
+      const normalizedPayload = normalizeRawPayloadShape(source.payload);
+      if (!normalizedPayload.sessionId) {
+        normalizedPayload.sessionId = generateResultId('rawsess');
+      }
+
+      if (source.descriptor?.type === 'inline' || source.descriptor?.type === 'file') {
+        rawSnapshotRegistry.set(normalizedPayload.sessionId, {
+          payload: normalizedPayload,
+          fileInfo: source.descriptor?.type === 'file'
+            ? { fileName: source.descriptor.fileName ?? null, publicPath: source.descriptor.filePath ?? null }
+            : null
+        });
+        source.descriptor.sessionId = normalizedPayload.sessionId;
+      }
+      const fallbackVisualizers = normalizedPayload.visualizers?.length
+        ? normalizedPayload.visualizers
+        : Object.keys(all_visualizers);
+      const candidateVisualizers = Array.isArray(requestedVisualizers) && requestedVisualizers.length
+        ? requestedVisualizers
+        : fallbackVisualizers;
+      const uniqueVisualizerNames = [...new Set(candidateVisualizers.filter((v) => typeof v === 'string'))]
+        .filter((name) => Object.prototype.hasOwnProperty.call(all_visualizers, name));
+      if (uniqueVisualizerNames.length === 0) {
+        return res.status(400).json({ error: 'no valid visualizers were requested' });
+      }
+
+      const defaultVisOptions = buildVisualizerDefaultOptions(uniqueVisualizerNames);
+      const baseVisOptions = mergeVisOptionsSnapshot(defaultVisOptions, normalizedPayload.visOptions ?? {});
+      const mergedVisOptions = mergeVisOptionsSnapshot(baseVisOptions, overrideVisOptions ?? {});
+      const geoJsonOutput = {};
+      const errors = {};
+
+      for (const visName of uniqueVisualizerNames) {
+        const instance = visualizers_[visName];
+        if (!instance || typeof instance.getFutureCollection !== 'function') {
+          errors[visName] = `visualizer "${visName}" is not available`;
+          continue;
+        }
+        try {
+          const crawlerClone = cloneJsonSafe(normalizedPayload.crawler);
+          const targetClone = cloneTargetForVisualizer(normalizedPayload);
+          const options = mergedVisOptions[visName] ?? {};
+          geoJsonOutput[visName] = instance.getFutureCollection(crawlerClone, targetClone, options);
+        } catch (err) {
+          console.error(`[api:revisualize] ${visName} failed:`, err);
+          errors[visName] = err?.message || String(err);
+        }
+      }
+
+      if (Object.keys(geoJsonOutput).length === 0) {
+        return res.status(500).json({ error: 'visualization failed', details: errors });
+      }
+
+      const responseBundle = {
+        version: normalizedPayload.version ?? 1,
+        resultId: generateResultId('raw'),
+        plugin: normalizedPayload.plugin ?? null,
+        visualizers: Object.keys(geoJsonOutput),
+        visOptions: mergedVisOptions,
+        palette: normalizedPayload.palette ?? {},
+        context: normalizedPayload.context ?? null,
+        geoJson: geoJsonOutput,
+        raw: {
+          type: source.descriptor?.type ?? null,
+          sessionId: normalizedPayload.sessionId ?? source.descriptor?.sessionId ?? null,
+          fileName: source.descriptor?.fileName ?? null,
+          filePath: source.descriptor?.filePath ?? null
+        }
+      };
+
+      return res.json({ ok: true, bundle: responseBundle, errors: Object.keys(errors).length ? errors : undefined });
+    } catch (err) {
+      console.error('[api:revisualize] failed:', err);
+      return res.status(500).json({ error: err?.message || 'failed to re-run visualizer' });
+    }
+  });
+
 
   io.on("connection", (socket) => {
     //console.log("connected:", socket.id);
@@ -474,6 +808,7 @@ try {
       delete crawlers[sessionId];
       delete targets[sessionId];
       delete processing[sessionId];
+      rawSnapshotRegistry.delete(sessionId);
     };
 
     socket.on("disconnecting", () => {
@@ -482,7 +817,13 @@ try {
     });
 
     const clientVisualizerNames = browseMode ? Object.keys(all_visualizers) : Object.keys(visualizers);
-    socket.emit("welcome", { socketId: socket.id, sessionId: sessionId, time: Date.now(), visualizers: clientVisualizerNames });
+    socket.emit("welcome", {
+      socketId: socket.id,
+      sessionId: sessionId,
+      time: Date.now(),
+      visualizers: clientVisualizerNames,
+      optionSchemas: cloneJsonSafe(visualizerOptionSchemas)
+    });
     //クローリング開始
     socket.on("crawling", async (req) => {
       if (browseMode) {
@@ -849,7 +1190,7 @@ try {
       cliOptions: sanitizeCliOptions(argvInput),
       stats: summarizeCrawlerProgress(crawler, target)
     };
-  }
+    }
 
   async function runTask_(taskName, data) {
     const { port1, port2 } = new MessageChannel();
@@ -1033,11 +1374,14 @@ try {
       const result = crawlers[currentSessionId];
       const target = targets[currentSessionId];
 
-      let geoJson = Object.fromEntries(
-        Object.entries(visualizers).map(([vis, v]) => [vis, v.getFutureCollection(result, target, visOptions[vis])])
-      );
+      const visualizerEntries = Object.entries(visualizers);
+      const visualizerNames = visualizerEntries.map(([vis]) => vis);
+      const defaultVisOptions = buildVisualizerDefaultOptions(visualizerNames);
+      const effectiveVisOptions = mergeVisOptionsSnapshot(defaultVisOptions, visOptions);
 
-      const visualizerNames = Object.keys(visualizers);
+      const geoJson = Object.fromEntries(
+        visualizerEntries.map(([vis, v]) => [vis, v.getFutureCollection(result, target, effectiveVisOptions[vis] ?? {})])
+      );
       const resultContext = buildResultContext(result, target, argv, visualizerNames);
       const palette = target["splatonePalette"];
       const resultBundle = {
@@ -1045,7 +1389,7 @@ try {
         resultId,
         plugin: argv.plugin,
         visualizers: visualizerNames,
-        visOptions,
+        visOptions: effectiveVisOptions,
         palette,
         context: resultContext,
         geoJson
@@ -1059,6 +1403,31 @@ try {
         palette: resultBundle.palette,
         context: resultBundle.context
       };
+
+      const rawPayload = buildRawPayload(
+        currentSessionId,
+        result,
+        target,
+        argv,
+        visualizerNames,
+        effectiveVisOptions,
+        palette,
+        resultContext
+      );
+      let rawFileInfo = null;
+      try {
+        rawFileInfo = await persistRawPayload(currentSessionId, rawPayload);
+      } catch (err) {
+        console.error('[raw] failed to persist raw payload:', err?.message || err);
+      }
+      rawSnapshotRegistry.set(currentSessionId, { payload: rawPayload, fileInfo: rawFileInfo });
+      const rawMeta = {
+        sessionId: currentSessionId,
+        fileName: rawFileInfo?.fileName ?? null,
+        filePath: rawFileInfo?.publicPath ?? null
+      };
+      resultBundle.raw = rawMeta;
+      bundleMeta.raw = rawMeta;
 
       //console.log('[splatone:finish]');
       let deliveryMode = 'inline';

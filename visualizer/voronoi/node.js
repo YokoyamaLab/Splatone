@@ -3,6 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { featureCollection, voronoi as turfVoronoi, bbox as turfBBox, intersect, point as turfPoint, distance as turfDistance } from '@turf/turf';
 import { VisualizerBase } from '../../lib/VisualizerBase.js';
 
+export const optionSchema = {
+    label: 'Voronoi',
+    fields: [
+        { key: 'MaxSitesPerHex', label: 'Max Sites / Hex', type: 'number', min: 0, step: 1, default: 0, description: 'ポワソン分布に基づいて各ヘックス内でサンプリングされる最大サイト数 (0 = 無制限)' },
+        { key: 'MinSiteSpacingMeters', label: 'Min Site Spacing (m)', type: 'number', min: 0, step: 1, default: 50, description: '各ヘックス内でサンプリングされたサイト間の最小距離をメートル単位で保証 (0 = 無効)' }
+    ]
+};
+
 function cloneFeature(feature) {
     return JSON.parse(JSON.stringify(feature ?? {}));
 }
@@ -452,24 +460,23 @@ export default class VoronoiVisualizer extends VisualizerBase {
     static name = 'Voronoi Visualizer';
     static version = '0.0.0';
     static description = 'Hex Grid ボロノイ図';
+    static optionSchema = optionSchema;
+
+    static getOptionSchema() {
+        return optionSchema;
+    }
 
     constructor() {
         super();
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));
     }
 
+    getOptionSchema() {
+        return optionSchema;
+    }
+
     async yargv(yargv) {
-        return yargv.option(this.argKey('MaxSitesPerHex'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: 'ポワソン分布に基づいて各ヘックス内でサンプリングされる最大サイト数 (0 = 無制限)',
-            default: 0
-        }).option(this.argKey('MinSiteSpacingMeters'), {
-            group: 'For ' + this.id + ' Visualizer',
-            type: 'number',
-            description: '各ヘックス内でサンプリングされたサイト間の最小距離をメートル単位で保証 (0 = 無効)',
-            default: 50
-        });
+        return this.applyOptionSchemaToYargs(yargv);
     }
 
     getFutureCollection(result, target, visOptions) {
