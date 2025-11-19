@@ -104,13 +104,15 @@ For flickr Plugin
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
       --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
       --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763465845]
+                                               [文字列] [デフォルト: 1763517169]
       --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
       --vis-bulky           全データをCircleMarkerとして地図上に表示
                                                       [真偽] [デフォルト: false]
+      --vis-dbscan          クロール結果をDBSCANクラスタリングし、クラスタの凸包
+                            をポリゴンで可視化します。[真偽] [デフォルト: false]
       --vis-heat            カテゴリ毎に異なるレイヤのヒートマップで可視化（色=
                             カテゴリ色、透明度=頻度） [真偽] [デフォルト: false]
       --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
@@ -124,51 +126,87 @@ Visualization (最低一つの指定が必須です)
       --vis-voronoi         Hex Grid ボロノイ図       [真偽] [デフォルト: false]
 
 For bulky Visualizer
-      --v-bulky-Radius       Point Markerの半径           [数値] [デフォルト: 5]
+      --v-bulky-Radius       Point Markerの半径 | min=0, step=1
+                                                          [数値] [デフォルト: 5]
       --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
-      --v-bulky-Weight       Point Markerの線の太さ       [数値] [デフォルト: 1]
-      --v-bulky-Opacity      Point Markerの線の透明度     [数値] [デフォルト: 1]
+      --v-bulky-Weight       Point Markerの線の太さ | min=0, step=1
+                                                          [数値] [デフォルト: 1]
+      --v-bulky-Opacity      Point Markerの線の透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
       --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
-      --v-bulky-FillOpacity  Point Markerの塗りの透明度 [数値] [デフォルト: 0.5]
+      --v-bulky-FillOpacity  Point Markerの塗りの透明度 | min=0, max=1,
+                             step=0.05                  [数値] [デフォルト: 0.5]
+
+For dbscan Visualizer
+      --v-dbscan-Eps             DBSCANのeps（クラスタ判定距離） | min=0.01,
+                                 step=0.01             [数値] [デフォルト: 0.02]
+      --v-dbscan-MinPts          DBSCANのminPts（クラスタ確定に必要な点数） |
+                                 min=1, step=1            [数値] [デフォルト: 6]
+      --v-dbscan-Units           epsで使用する距離単位
+       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
+                                                                   "kilometers"]
+      --v-dbscan-StrokeWidth     ポリゴン輪郭の太さ | min=0, max=10, step=0.5
+                                                          [数値] [デフォルト: 2]
+      --v-dbscan-StrokeOpacity   ポリゴン輪郭の透明度 | min=0, max=1, step=0.05
+                                                        [数値] [デフォルト: 0.9]
+      --v-dbscan-FillOpacity     ポリゴン塗りの透明度 | min=0, max=1, step=0.05
+                                                       [数値] [デフォルト: 0.35]
+      --v-dbscan-DashArray       LeafletのdashArray指定（例: "4 6"） | 例: 例: 4
+                                 6                     [文字列] [デフォルト: ""]
+      --v-dbscan-KernelScale     KDEカーネル半径をepsに対して何倍にするか |
+                                 min=0.1, max=10, step=0.1[数値] [デフォルト: 1]
+      --v-dbscan-GridSize        KDE計算用グリッド解像度（長辺方向セル数） |
+                                 min=8, max=256, step=1  [数値] [デフォルト: 80]
+      --v-dbscan-ContourPercent  最大密度に対する等値線レベル（0-1） | min=0.05,
+                                 max=0.95, step=0.05    [数値] [デフォルト: 0.4]
 
 For heat Visualizer
-      --v-heat-Radius      ヒートマップブラーの半径  [数値] [デフォルト: 0.0005]
-      --v-heat-MinOpacity  ヒートマップの最小透明度       [数値] [デフォルト: 0]
-      --v-heat-MaxOpacity  ヒートマップの最大透明度       [数値] [デフォルト: 1]
+      --v-heat-Radius      ヒートマップブラーの半径 | min=0, step=0.0001
+                                                     [数値] [デフォルト: 0.0005]
+      --v-heat-MinOpacity  ヒートマップの最小透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 0]
+      --v-heat-MaxOpacity  ヒートマップの最大透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
       --v-heat-MaxValue    ヒートマップ強度の最大値
-                           (未指定時はデータから自動推定)                 [数値]
+                           (未指定時はデータから自動推定) | step=1        [数値]
 
 For majority-hex Visualizer
       --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
                                                       [真偽] [デフォルト: false]
-      --v-majority-hex-HexOpacity   六角形の線の透明度    [数値] [デフォルト: 1]
-      --v-majority-hex-HexWeight    六角形の線の太さ      [数値] [デフォルト: 1]
-      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度
-                                                        [数値] [デフォルト: 0.9]
-      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度
-                                                        [数値] [デフォルト: 0.5]
+      --v-majority-hex-HexOpacity   六角形の線の透明度 | min=0, max=1, step=0.05
+                                                          [数値] [デフォルト: 1]
+      --v-majority-hex-HexWeight    六角形の線の太さ | min=0, step=1
+                                                          [数値] [デフォルト: 1]
+      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度 | min=0, max=1,
+                                    step=0.05           [数値] [デフォルト: 0.9]
+      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度 | min=0, max=1,
+                                    step=0.05           [数値] [デフォルト: 0.5]
 
 For marker-cluster Visualizer
-      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径)
-                                                         [数値] [デフォルト: 80]
+      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径) | min=1,
+                                           step=1        [数値] [デフォルト: 80]
 
 For pie-charts Visualizer
       --v-pie-charts-MaxRadiusScale     Hex内接円半径に対する最大半径スケール
-                                        (0-1.5)         [数値] [デフォルト: 0.9]
-      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1)
+                                        (0-1.5) | min=0.1, max=1.5, step=0.05
+                                                        [数値] [デフォルト: 0.9]
+      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1) |
+                                        min=0, max=1, step=0.05
                                                        [数値] [デフォルト: 0.25]
-      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px)
-                                                          [数値] [デフォルト: 1]
-      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1)
+      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px) | min=0,
+                                        step=1            [数値] [デフォルト: 1]
+      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1) |
+                                        min=0, max=1, step=0.05
                                                         [数値] [デフォルト: 0.2]
 
 For voronoi Visualizer
       --v-voronoi-MaxSitesPerHex        ポワソン分布に基づいて各ヘックス内でサン
                                         プリングされる最大サイト数 (0 = 無制限)
-                                                          [数値] [デフォルト: 0]
+                                        | min=0, step=1   [数値] [デフォルト: 0]
       --v-voronoi-MinSiteSpacingMeters  各ヘックス内でサンプリングされたサイト間
                                         の最小距離をメートル単位で保証 (0 =
-                                        無効)            [数値] [デフォルト: 50]
+                                        無効) | min=0, step=1
+                                                         [数値] [デフォルト: 50]
 
 オプション:
       --help     ヘルプを表示                                             [真偽]
