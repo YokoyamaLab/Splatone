@@ -12,7 +12,7 @@ const MAX_KERNEL_SCALE = 10;
 export const optionSchema = {
 	label: 'DBSCAN Cluster Hulls',
 	fields: [
-		{ key: 'Eps', label: 'Eps', type: 'number', min: 0.01, step: 0.01, default: 0.02, description: 'DBSCANのeps（クラスタ判定距離）' },
+		{ key: 'Eps', label: 'Eps', type: 'number', min: 0.01, step: 0.01, default: 0.6, description: 'DBSCANのeps（クラスタ判定距離）' },
 		{ key: 'MinPts', label: 'MinPts', type: 'number', min: 1, step: 1, default: 6, description: 'DBSCANのminPts（クラスタ確定に必要な点数）' },
 		{ key: 'Units', label: 'Units', type: 'select', options: ['kilometers', 'meters', 'miles'], default: DEFAULT_UNITS, description: 'epsで使用する距離単位' },
 		{ key: 'StrokeWidth', label: 'Stroke Width', type: 'number', min: 0, max: 10, step: 0.5, default: 2, description: 'ポリゴン輪郭の太さ' },

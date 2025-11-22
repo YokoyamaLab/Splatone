@@ -1,6 +1,63 @@
 # Splatone - Multi-layer Composite Heatmap
 
-# 概要
+<!-- vscode-markdown-toc -->
+- [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
+  - [概要](#概要)
+  - [Change Log](#change-log)
+    - [v0.0.22 → →　v0.0.23](#v0022--v0023)
+    - [v0.0.18 → →　v0.0.22](#v0018--v0022)
+    - [v0.0.17 →　v0.0.18](#v0017-v0018)
+    - [v0.0.13 → →　v0.0.17](#v0013--v0017)
+    - [v0.0.12 →　v0.0.13](#v0012-v0013)
+- [使い方](#使い方)
+  - [Helpの表示](#helpの表示)
+  - [最小コマンド例](#最小コマンド例)
+  - [ブラウズ専用モード](#ブラウズ専用モード)
+- [詳細説明](#詳細説明)
+  - [Plugin (クローラー)](#plugin-クローラー)
+    - [Flickr: Flickrのジオタグ付き写真を取得するクローラー](#flickr-flickrのジオタグ付き写真を取得するクローラー)
+      - [コマンドライン引数](#コマンドライン引数)
+      - [Flickr APIキーの与え方](#flickr-apiキーの与え方)
+  - [Visualizer (可視化モジュール)](#visualizer-可視化モジュール)
+    - [Bulky: 全ての点を地図上にポイントする](#bulky-全ての点を地図上にポイントする)
+      - [コマンド例](#コマンド例)
+      - [コマンドライン引数](#コマンドライン引数-1)
+    - [Marker Cluster: 高密度の地点はマーカーをまとめて表示する](#marker-cluster-高密度の地点はマーカーをまとめて表示する)
+      - [コマンド例](#コマンド例-1)
+      - [コマンドライン引数](#コマンドライン引数-2)
+    - [Heat: ヒートマップ](#heat-ヒートマップ)
+      - [コマンド例](#コマンド例-2)
+      - [コマンドライン引数](#コマンドライン引数-3)
+    - [Majority Hex: Hexグリッド内の出現頻度に応じた彩色](#majority-hex-hexグリッド内の出現頻度に応じた彩色)
+      - [コマンド例](#コマンド例-3)
+      - [コマンドライン引数](#コマンドライン引数-4)
+    - [Pie Charts: Hex中心にカテゴリ割合Pie Chartを描画](#pie-charts-hex中心にカテゴリ割合pie-chartを描画)
+      - [コマンド例](#コマンド例-4)
+      - [コマンドライン引数](#コマンドライン引数-5)
+    - [Voronoi: Hex Gridをベースにしたボロノイ分割](#voronoi-hex-gridをベースにしたボロノイ分割)
+      - [コマンド例](#コマンド例-5)
+      - [コマンドライン引数](#コマンドライン引数-6)
+    - [DBSCAN: KDE等値線ポリゴンでクラスタを表示](#dbscan-kde等値線ポリゴンでクラスタを表示)
+      - [コマンド例](#コマンド例-6)
+      - [コマンドライン引数](#コマンドライン引数-7)
+  - [キーワード指定方法](#キーワード指定方法)
+    - [比較キーワードの指定](#比較キーワードの指定)
+    - [類語キーワードの指定](#類語キーワードの指定)
+    - [カテゴリ名の指定](#カテゴリ名の指定)
+    - [カテゴリ毎の色指定](#カテゴリ毎の色指定)
+      - [色セット生成ツール(color.js)の使い方](#色セット生成ツールcolorjsの使い方)
+  - [ダウンロード](#ダウンロード)
+    - [画像のダウンロード](#画像のダウンロード)
+    - [データのダウンロード](#データのダウンロード)
+    - [広範囲なデータ収集例](#広範囲なデータ収集例)
+
+<!-- vscode-markdown-toc-config
+	numbering=false
+	autoSave=true
+	/vscode-markdown-toc-config -->
+<!-- /vscode-markdown-toc -->
+
+## <a name=''></a>概要
 
 SNSのジオタグ付きポストをキーワードに基づいて収集するツールです。キーワードは複数指定し、それぞれのキーワードの出現分布を地図上にマップします。現在は以下のSNSに対応しています。
 
@@ -17,9 +74,10 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Pie Charts: 円グラフグリッド
 - DBSCAN: ジオタグをDBSCANクラスタリングし、各クラスタの凸包をポリゴンとして表示
 
-## Change Log
 
-### v0.0.22 → →　v0.0.23
+## <a name='ChangeLog'></a>Change Log
+
+### <a name='v0.0.22v0.0.23'></a>v0.0.22 → →　v0.0.23
 
 * ブラウズモードの追加
   * ダウンロードした結果ファイルを閲覧するモード
@@ -31,7 +89,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 * カラーパレット生成ツールの改良
   * ブラウザ上でカラーの確認と調整を可能に
 
-### v0.0.18 → →　v0.0.22
+### <a name='v0.0.18v0.0.22'></a>v0.0.18 → →　v0.0.22
 
 * **[可視化モジュール]** ```--vis-voronoi```追加
   * ボロノイ図の生成
@@ -39,18 +97,18 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
   * Hex中心のカテゴリ割合Pie Chart描画
 * マイナーBug Fix
 
-### v0.0.17 →　v0.0.18
+### <a name='v0.0.17v0.0.18'></a>v0.0.17 →　v0.0.18
 
 * **[可視化モジュール]** ```--vis-heat```追加
   * ヒートマップの生成
 
-### v0.0.13 → →　v0.0.17
+### <a name='v0.0.13v0.0.17'></a>v0.0.13 → →　v0.0.17
 
 * **[可視化モジュール]** ```--vis-majority-hex```追加
 * 結果の色固定機能追加 (キーワード指定方法を参照の事)
 * [Bug Fix] npxが起動しない事象の修正
 
-### v0.0.12 →　v0.0.13
+### <a name='v0.0.12v0.0.13'></a>v0.0.12 →　v0.0.13
 
 * BulkyのPointMarkerのサイズや透明度を可変に
   * コマンドライン引数で指定 (詳しくは```  npx -y -p splatone@latest crawler --help```)
@@ -63,7 +121,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - [Node.js](https://nodejs.org/ja/download)をインストール後、npxで実行します。
   - npxはnpm上のモジュールをコマンド一つでインストールと実行を行う事ができるコマンドです。
 
-## Helpの表示
+## <a name='Help'></a>Helpの表示
 
 ```shell
 $ npx -y -p splatone@latest crawler --help
@@ -213,7 +271,7 @@ For voronoi Visualizer
       --version  バージョンを表示                                         [真偽]
 ```
 
-## 最小コマンド例
+## <a name='-1'></a>最小コマンド例
 
 1. *plugin*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
   * plugin: flickr
@@ -226,10 +284,10 @@ For voronoi Visualizer
 ![](assets/screenshot_venice_simple.png?raw=true)
 
 ```bash
-$ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+$ npx -y -p splatone@latest crawler -p flickr -k "canal,river,sea|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-## ブラウズ専用モード
+## <a name='-1'></a>ブラウズ専用モード
 
 ダウンロードした結果ファイルをブラウザ上で閲覧するためのモードです。
 
@@ -251,11 +309,11 @@ npx -y -p splatone@latest crawl --browse-mode
 
 # 詳細説明
 
-## Plugin (クローラー)
+## <a name='Plugin'></a>Plugin (クローラー)
 
-### Flickr: Flickrのジオタグ付き写真を取得するクローラー
+### <a name='Flickr:Flickr'></a>Flickr: Flickrのジオタグ付き写真を取得するクローラー
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                | 説明                                                                          | 型             | デフォルト   |
 | :------------------------ | :---------------------------------------------------------------------------- | :------------- | :----------- |
@@ -266,7 +324,7 @@ npx -y -p splatone@latest crawl --browse-mode
 | ```--p-flickr-DateMax```  | クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | (動的)現時刻 |
 | ```--p-flickr-DateMin```  | クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | 1072882800   |
 
-#### Flickr APIキーの与え方
+#### <a name='FlickrAPI'></a>Flickr APIキーの与え方
 
 APIキーは以下の３種類の方法で与える事ができます
 - ```--option```に含める
@@ -282,21 +340,21 @@ APIキーは以下の３種類の方法で与える事ができます
   - **flickr**の場合は```.API_KEY.flickr```になります。
   - optionや環境変数で与えるよりも優先されます。
 
-## Visualizer (可視化モジュール)
+## <a name='Visualizer'></a>Visualizer (可視化モジュール)
 
-### Bulky: 全ての点を地図上にポイントする
+### <a name='Bulky:'></a>Bulky: 全ての点を地図上にポイントする
 
 全ての点を地図上に表示する。
 
 ![](assets/screenshot_sea-mountain_bulky.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 * クエリは海と山のキーワード検索。上記スクリーンショットは日本のデータ
 ```shell
 $ npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vis-bulky--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                  | 説明                       | 型   | デフォルト |
 | :-------------------------- | :------------------------- | :--- | :--------- |
@@ -308,30 +366,30 @@ $ npx -y -p splatone@latest crawler -p flickr -k "sea,ocean|mountain,mount" --vi
 | ```--v-bulky-FillOpacity``` | Point Markerの塗りの透明度 | 数値 | 0.5        |
 
 
-### Marker Cluster: 高密度の地点はマーカーをまとめて表示する
+### <a name='MarkerCluster:'></a>Marker Cluster: 高密度の地点はマーカーをまとめて表示する
 
 全マーカーを表示すると、地図上がマーカーで埋め尽くされる問題に対して、高密度地点のマーカー群を一つにまとめてマーカーとする手法。ズームレベルに応じて自動的にマーカーが集約される。
 
 ![](assets/screenshot_venice_marker-cluster.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 * クエリは水域と通路・橋梁・ランドマークを色分けしたもの、上記スクリーンショットはベネチア付近のデータ
 ```shell
 $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|橋梁=bridge,overpass,flyover,aqueduct,trestle|通路=street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,sanctuary,chapel,cathedral,basilica,minster,abbey" --vis-marker-cluster --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                                | 説明                         | 型   | デフォルト |
 | :---------------------------------------- | :--------------------------- | :--- | :--------- |
 | ```--v-marker-cluster-MaxClusterRadius``` | クラスタを構成する範囲(半径) | 数値 | 80         |
 
-### Heat: ヒートマップ
+### <a name='Heat:'></a>Heat: ヒートマップ
 
 出現頻度に基づいて点の影響範囲をガウス分布で定め連続的に彩色するヒートマップ。
 
 ![](assets/screenshot_venice_heat.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
  
@@ -339,7 +397,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway|交通#00a73d=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine" --vis-heat --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                | 説明                                                   | 型   | デフォルト |
 | :------------------------ | :----------------------------------------------------- | :--- | :--------- |
@@ -348,11 +406,11 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 | ```--v-heat-MaxOpacity``` | ヒートマップの最大透明度                               | 数値 | 1          |
 | ```--v-heat-MaxValue```   | ヒートマップ強度の最大値(未指定時はデータから自動推定) | 数値 |            |
 
-### Majority Hex: Hexグリッド内の出現頻度に応じた彩色
+### <a name='MajorityHex:Hex'></a>Majority Hex: Hexグリッド内の出現頻度に応じた彩色
 
 ![](assets/screenshot_florida_hex_majorityr.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 
 * クエリは水域・緑地・交通・ランドマークを色分けしたもの。上記スクリーンショットはフロリダ半島全体
 
@@ -361,7 +419,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,river,stream,watercourse,sea,ocean,gulf,bay,strait,lagoon,offshore|緑地=forest,woods,turf,lawn,jungle,trees,rainforest,grove,savanna,steppe|交通=bridge,overpass,flyover,aqueduct,trestle,street,road,thoroughfare,roadway,avenue,boulevard,lane,alley,roadway,carriageway,highway,motorway|ランドマーク=church,chapel,cathedral,basilica,minster,temple,shrine,neon,theater,statue,museum,sculpture,zoo,aquarium,observatory" --vis-majority-hex --v-majority-hex-Hexapartite --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                            | 説明                                       | 型   | デフォルト |
 | :------------------------------------ | :----------------------------------------- | :--- | :--------- |
@@ -373,7 +431,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域=canal,channel,waterway,
 
 * ```--v-majority-hex-Hexapartite```を指定すると各Hexセルを六分割の荒いPie Chartとして中のカテゴリ頻度に応じて彩色します。
 
-### Pie Charts: Hex中心にカテゴリ割合Pie Chartを描画
+### <a name='PieCharts:HexPieChart'></a>Pie Charts: Hex中心にカテゴリ割合Pie Chartを描画
 
 ![](assets/screenshot_pie_tokyo.png?raw=true)
 
@@ -381,7 +439,7 @@ Hexセル中心に、カテゴリ比率を角度で、グローバル出現数�
 
 ズームイン／アウト時にはLeafletのzoomイベントをフックしてPie Chartを再描画し、現在の縮尺でもHex境界にフィットする半径が自動再計算されます。
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 
 * クエリは水域・交通・宗教施設・緑地を色分け。Hexサイズに応じて自動計算される最大半径を90%まで、最小半径をその40%に設定しています。
 
@@ -389,7 +447,7 @@ Hexセル中心に、カテゴリ比率を角度で、グローバル出現数�
 $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-pie-charts --v-pie-charts-MaxRadiusScale=0.9 --v-pie-charts-MinRadiusScale=0.4 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                               | 説明                                                                                                          | 型   | デフォルト |
 | :--------------------------------------- | :------------------------------------------------------------------------------------------------------------ | :--- | :--------- |
@@ -400,13 +458,13 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 
 Pie Chartの最大・最小半径は各Hexのジオメトリから算出した内接円半径に基づき動的に決まり、カテゴリごとの扇形半径は「そのHex内カテゴリ出現数 ÷ 全カテゴリ総数」に比例して拡大します。グローバル最大カテゴリのシェアを1として正規化するため、Hex間でもカテゴリ規模を比較できます。
 
-### Voronoi: Hex Gridをベースにしたボロノイ分割
+### <a name='Voronoi:HexGrid'></a>Voronoi: Hex Gridをベースにしたボロノイ分割
 
 Hex Gridで集約した各セル内のジオタグを種点としてVoronoi分割を行い、生成したポリゴンをHex境界でクリップして表示します。カテゴリカラーと総数はHex集計結果に基づき、最小間隔／最大サイト数の制御で過密な地域も読みやすく整列できます。
 
 ![](assets/screenshot_voronoi_tokyo.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
 
 * クエリは水域・交通・宗教施設・緑地を色分けしたもの。Hex単位で50m以上離れたサイトだけをVoronoiセルとして採用します。上記の例は東京を範囲としたもの。皇居の緑地や墨田川の水域がよく現れている。
 
@@ -414,7 +472,7 @@ Hex Gridで集約した各セル内のジオタグを種点としてVoronoi分�
 $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-voronoi --v-voronoi-MinSiteSpacingMeters=50　--p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション                                | 説明                                                                                      | 型   | デフォルト |
 | :---------------------------------------- | :---------------------------------------------------------------------------------------- | :--- | :--------- |
@@ -423,19 +481,19 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 
 MinSiteSpacingMetersによる間引きは、各サイト周辺 (MinSiteSpacingMeters以内) の同カテゴリ出現数を優先度として利用するため、同距離内で競合した場合も局所的に密度の高いカテゴリのサイトが採用されやすくなります。一方で密度は低いが他の場所に比べて顕著に出現するカテゴリを見逃す可能性があります。なお、Voronoi図の作成は消費メモリが大きい為、デフォルトでは50m間隔に間引きます。厳密解が必要な場合は```--v-voronoi-MinSiteSpacingMeters=0```を指定してください。ただし、その場合はヒープを使い果たしてクラッシュする可能性があります。マシンパワーに余裕がある場合は```npx --node-options='--max-old-space-size=10240'```のようにヒープサイズを拡大して実行する事も可能です。もう一つのオプション```--v-voronoi-MaxSitesPerHex```はHex内の最大アイテム数を制限するものです。ポワソンサンプリングに基づいてアイテムを間引きます。MinSiteSpacingMetersと共に、適切な結果が得られるよう調整してください。
 
-### DBSCAN: KDE等値線ポリゴンでクラスタを表示
+### <a name='DBSCAN:KDE'></a>DBSCAN: KDE等値線ポリゴンでクラスタを表示
 
 HexGridに集約されたジオタグをカテゴリ毎にDBSCANクラスタリングし、そのクラスタ内部の点群に対してカーネル密度推定（KDE）を実施、指定した密度レベルの等値線を抽出してポリゴン化します。凸包よりも外形を忠実に再現しやすく、Eps/MinPtsでクラスタ粒度を、KernelScale/GridSize/ContourPercentで輪郭の滑らかさや閾値を制御できます。輪郭および塗りのスタイルも調整可能です。このVisualizerはクラスタの等高線を表示するだけですので、Bulkyと併用する事でジオタグも表示できます。
 
 ![](assets/screenshot_dbscan_kyoto.png?raw=true)
 
-#### コマンド例
+#### <a name='-1'></a>コマンド例
  
 ```shell
 $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,strait,channel,waterway,pond|交通#aaaaaa=road,street,alley,sidewalk,bridge|宗教施設#ffb724=chapel,church,cathedral,temple,shrine|緑地#00a73d=forest,woods,trees,mountain,garden,turf" --vis-dbscan --v-dbscan-Eps=0.25　--v-dbscan-MinPts=4 --v-dbscan-KernelScale=0.4 --v-dbscan-GridSize=30 --v-dbscan-ContourPercent=0.05 --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-#### コマンドライン引数
+#### <a name='-1'></a>コマンドライン引数
 
 | オプション | 説明 | 型 | デフォルト |
 | :-- | :-- | :-- | :-- |
@@ -450,11 +508,11 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 | `--v-dbscan-GridSize` | KDEグリッドの長辺方向セル数（8〜256） | 数値 | 80 |
 | `--v-dbscan-ContourPercent` | 最大密度に対する等値線レベル（0.05〜0.95） | 数値 | 0.4 |
 
-## キーワード指定方法
+## <a name='-1'></a>キーワード指定方法
 
 キーワードとはソーシャルデータを検索する単語の事で、複数のキーワードをしていする事で、地理的な出現頻度・分散を比較できます。
 
-### 比較キーワードの指定
+### <a name='-1'></a>比較キーワードの指定
 
 複数のキーワードでジオタグ付きポストを集め分布を比較します。比較キーワードは「|」区切りで指定します。例えばseaとmountainの分布を調べたい場合は以下のようにします。この例では、seaとタグ付けられたポストとmountainとタグ付けられたポストが色分けされて分布を表示します。
 
@@ -462,7 +520,7 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 -k "sea|mountain"
 ```
 
-### 類語キーワードの指定
+### <a name='-1'></a>類語キーワードの指定
 
 seaだけでは集められるポストが限定されるので、同様の意味のキーワードも指定してor検索したいと考えるかもしれません。その場合は「,」で区切ってキーワードを並べる事ができます。これを類語キーワードと呼びます。例えばseaとocean、mountainとmountでor検索したい場合は以下のように指定します。
 
@@ -470,7 +528,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 -k "sea,ocean|mountain,mount"
 ```
 
-### カテゴリ名の指定
+### <a name='-1'></a>カテゴリ名の指定
 
 複数の類語キーワードを指定した場合、それらをまとめるカテゴリ名を付ける事ができます。たとえはsea,oceanに『海域』、mountain,mountに『山岳』とカテゴリ名をつけるには以下のように指定します。なお、指定は必須ではありません。指定しない場合はそれぞれ１番目のキーワード(seaとmountain)がカテゴリ名になります。
 
@@ -478,7 +536,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 -k "海域=sea,ocean|山岳=mountain,mount"
 ```
 
-### カテゴリ毎の色指定
+### <a name='-1'></a>カテゴリ毎の色指定
 
 カテゴリの内容に合わせた色を指定したい場合はコマンドライン引数にて行えます。例えば海域を青に、山岳を緑にしたい場合は、カテゴリ名に続けて**#RRGGBB**で指定します。
 
@@ -488,7 +546,7 @@ seaだけでは集められるポストが限定されるので、同様の意�
 
 色を簡単に探すための小さなコマンドが付属しています。
 
-#### 色セット生成ツール(color.js)の使い方
+#### <a name='color.js'></a>色セット生成ツール(color.js)の使い方
 
 このリポジトリには、コマンドラインで色のセットを生成する小さなユーティリティ `color.js` が含まれています。用途は以下の通りです。
 
@@ -519,21 +577,21 @@ npx -y -p splatone@latest color --no-ansi 6 3
 
 
 
-## ダウンロード
+## <a name='-1'></a>ダウンロード
 
-### 画像のダウンロード
+### <a name='-1'></a>画像のダウンロード
 
 * 結果の地図を画像(PNG形式)としてダウンロードするには、画面右下のアイコンをクリックしてください。
   * 注意: 画像には凡例が含まれません 
 
 ![](assets/icon_image_download.png?raw=true)
 
-### データのダウンロード
+### <a name='-1'></a>データのダウンロード
 
 * クロール結果をデータとしてダウンロードしたい場合は凡例の下にあるエクスポートボタンをクリックしてください。
   * 指定したビジュアライザ毎にFeature Collectionとして結果が格納されます。
   * クローリングしたデータそのものが欲しい場合はBulky等、単純なビジュアライザを指定してください。
-### 広範囲なデータ収集例
+### <a name='-1'></a>広範囲なデータ収集例
 
 * クエリ数はおおよそ1 query/secに調整されますので、時間はかかりますが大量のデータを収集する事も可能です。
 
