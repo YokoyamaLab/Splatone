@@ -219,14 +219,19 @@ For dbscan Visualizer
                                  max=0.95, step=0.05    [数値] [デフォルト: 0.4]
 
 For heat Visualizer
-      --v-heat-Radius      ヒートマップブラーの半径 | min=0, step=0.0001
-                                                     [数値] [デフォルト: 0.0005]
+  --v-heat-Radius      ヒートマップブラーの半径（Unitsで選んだ距離単位） |
+           min=0, step=1                [数値] [デフォルト: 50]
+  --v-heat-Units       Radiusに使用する距離単位
+   [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
+                        "meters"]
       --v-heat-MinOpacity  ヒートマップの最小透明度 | min=0, max=1, step=0.05
                                                           [数値] [デフォルト: 0]
       --v-heat-MaxOpacity  ヒートマップの最大透明度 | min=0, max=1, step=0.05
                                                           [数値] [デフォルト: 1]
       --v-heat-MaxValue    ヒートマップ強度の最大値
                            (未指定時はデータから自動推定) | step=1        [数値]
+  --v-heat-WeightThreshold  半径内に存在する近傍点数（自分以外）がこの値未満
+           の点は描画しない | min=0, step=1 [数値] [デフォルト: 1]
 
 For majority-hex Visualizer
       --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
@@ -401,10 +406,12 @@ $ npx -y -p splatone@latest crawler -p flickr -k "水域#0947ff=canal,river,sea,
 
 | オプション                | 説明                                                   | 型   | デフォルト |
 | :------------------------ | :----------------------------------------------------- | :--- | :--------- |
-| ```--v-heat-Radius```     | ヒートマップブラーの半径                               | 数値 | 0.0005     |
+| ```--v-heat-Radius```     | ヒートマップブラーの半径（Unitsで指定した距離単位）     | 数値 | 50         |
+| ```--v-heat-Units```      | Radiusに使用する距離単位                                | 文字列 | meters     |
 | ```--v-heat-MinOpacity``` | ヒートマップの最小透明度                               | 数値 | 0          |
 | ```--v-heat-MaxOpacity``` | ヒートマップの最大透明度                               | 数値 | 1          |
 | ```--v-heat-MaxValue```   | ヒートマップ強度の最大値(未指定時はデータから自動推定) | 数値 |            |
+| ```--v-heat-WeightThreshold``` | 半径内に存在する近傍点数（自分以外）がこの値未満の点は描画しない | 数値 | 1 |
 
 ### <a name='MajorityHex:Hex'></a>Majority Hex: Hexグリッド内の出現頻度に応じた彩色
 
