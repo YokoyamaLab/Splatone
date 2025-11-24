@@ -28,10 +28,10 @@ import { hideBin } from 'yargs/helpers';
 // -------------------------------
 // Local modules
 // -------------------------------
-import { loadPlugins } from './lib/pluginLoader.js';
+import { loadProviders } from './lib/providerLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
 import chroma from 'chroma-js';
-import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildPluginsOptions, loadAPIKey, buildVisualizersOptions } from '#lib/splatone';
+import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildProvidersOptions, loadAPIKey, buildVisualizersOptions } from '#lib/splatone';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,7 +40,7 @@ const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
 const CLI_BASE_COMMAND = process.env.SPLATONE_CLI_BASE ?? 'npx -y -p splatone@latest crawler';
-let pluginsOptions = {};
+let providersOptions = {};
 let visOptions = {};
 
 const flickrLimiter = new Bottleneck({
@@ -128,19 +128,19 @@ function buildUiDefaults(argv) {
 
 try {
 
-  // Plugin 読み込み
+  // Provider 読み込み
   const api = {
     log: (...a) => console.log('[app]', ...a),
     emit: (topic, payload) => bus.emit(topic, payload), // 重要
-    getPlugin: (id) => plugins.get(id),
+    getProvider: (id) => providers.get(id),
   };
 
-  const plugins = await loadPlugins({
-    dir: './plugins',
+  const providers = await loadProviders({
+    dir: './providers',
     api,
     optionsById: {},
   });
-  const installedPluginIds = plugins.list();
+  const installedProviderIds = providers.list();
 
   // Visualizer読み込み
   const all_visualizers = {};  // { [name: string]: class }
@@ -232,12 +232,12 @@ try {
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
-    .option('plugin', {
+    .option('provider', {
       group: 'Basic Options',
       alias: 'p',
-      choices: installedPluginIds,
+      choices: installedProviderIds,
       demandOption: false,
-      describe: '実行するプラグイン',
+      describe: '実行するプロバイダ',
       type: 'string'
     })
     .option('keywords', {
@@ -303,8 +303,8 @@ try {
       })()
       */
     });
-  installedPluginIds.forEach(async (plug) => {
-    yargv = await plugins.call(plug, "yargv", yargv);
+  installedProviderIds.forEach(async (prov) => {
+    yargv = await providers.call(prov, "yargv", yargv);
   })
 
 
@@ -324,8 +324,8 @@ try {
     const isBrowseMode = argv['browse-mode'] === true;
     const selectedVisualizers = Object.keys(all_visualizers).filter(v => argv["vis-" + v]);
     if (!isBrowseMode) {
-      if (!argv.plugin) {
-        throw new Error('プラグインの指定がありません。-p で実行するプラグインを指定してください。');
+      if (!argv.provider) {
+        throw new Error('プロバイダの指定がありません。-p で実行するプロバイダを指定してください。');
       }
       if (selectedVisualizers.length === 0) {
         throw new Error('可視化ツールの指定がありません。最低一つは指定してください。');
@@ -334,11 +334,11 @@ try {
         console.warn("--filedと--choppedが両方指定されています。--filedが優先されます。");
         argv.chopped = false;
       }
-      pluginsOptions = buildPluginsOptions(argv, installedPluginIds);
+      providersOptions = buildProvidersOptions(argv, installedProviderIds);
       visOptions = buildVisualizersOptions(argv, Object.keys(visualizers_));
-      pluginsOptions[argv.plugin] = await plugins.call(argv.plugin, 'check', pluginsOptions[argv.plugin]);
+      providersOptions[argv.provider] = await providers.call(argv.provider, 'check', providersOptions[argv.provider]);
     } else {
-      pluginsOptions = {};
+      providersOptions = {};
       visOptions = {};
       if (argv.filed || argv.chopped) {
         if (argv.debugVerbose) {
@@ -375,11 +375,11 @@ try {
     }
   }
 
-  if (!browseMode && argv.plugin) {
-    await plugins.call(argv.plugin, 'init', pluginsOptions[argv.plugin]);
+  if (!browseMode && argv.provider) {
+    await providers.call(argv.provider, 'init', providersOptions[argv.provider]);
   }
   if (argv.debugVerbose) {
-    console.table([["Visualizer", browseMode ? effectiveVisualizerNames : Object.keys(visualizers)], ["Plugin", argv.plugin || '(browse)']]);
+    console.table([["Visualizer", browseMode ? effectiveVisualizerNames : Object.keys(visualizers)], ["Provider", argv.provider || '(browse)']]);
   }
 
 
@@ -502,7 +502,7 @@ try {
       return {
         version: 1,
         sessionId,
-        plugin: argvInput?.plugin ?? null,
+        provider: argvInput?.provider ?? null,
         generatedAt: context?.generatedAt ?? new Date().toISOString(),
         visualizers: Array.isArray(visualizerNames) ? [...visualizerNames] : [],
         visOptions: normalizedVisOptions,
@@ -557,7 +557,7 @@ try {
     return {
       version: payload.version ?? 1,
       sessionId: payload.sessionId ?? null,
-      plugin: payload.plugin ?? null,
+      provider: payload.provider ?? null,
       generatedAt: payload.generatedAt ?? context.generatedAt ?? new Date().toISOString(),
       visualizers: Array.isArray(payload.visualizers) ? payload.visualizers : [],
       visOptions: payload.visOptions ?? {},
@@ -692,7 +692,7 @@ try {
         bbox: uiDefaults.bbox,
         polygon: uiDefaults.polygon,
       },
-      selectedPlugin: browseMode ? null : argv.plugin,
+      selectedProvider: browseMode ? null : argv.provider,
       selectedVisualizers: browseMode ? [] : Object.keys(visualizers),
       cliBaseCommand: CLI_BASE_COMMAND,
       browseMode,
@@ -776,7 +776,7 @@ try {
       const responseBundle = {
         version: normalizedPayload.version ?? 1,
         resultId: generateResultId('raw'),
-        plugin: normalizedPayload.plugin ?? null,
+        provider: normalizedPayload.provider ?? null,
         visualizers: Object.keys(geoJsonOutput),
         visOptions: mergedVisOptions,
         palette: normalizedPayload.palette ?? {},
@@ -844,10 +844,9 @@ try {
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
           categories: targets[req.sessionId].categories,
-          pluginOptions: pluginsOptions[argv.plugin]
+          providerOptions: providersOptions[argv.provider]
         };
-        //console.log(optPlugin);
-        await plugins.call(argv.plugin, 'crawl', workerOptions);
+        await providers.call(argv.provider, 'crawl', workerOptions);
       }
       catch (e) {
         console.error(e);
@@ -1072,7 +1071,7 @@ try {
   function resolveWorkerFilename(taskName) {
     if (!resolvedWorkerFilename[taskName]) {
       // できれば workers/<taskName>/worker.mjs のように ESM に統一
-      const filePath = resolve(__dirname, "plugins", taskName, "worker.js");
+      const filePath = resolve(__dirname, "providers", taskName, "worker.js");
       if (!existsSync(filePath)) {
         // URL はログ用途のみ。Piscinaへはこの後 href を渡す
         const url = pathToFileURL(filePath).href;
@@ -1282,15 +1281,15 @@ try {
       io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex });
       if (!rtn.final) {
         // 次回クロール用に更新
-        rtn.nextPluginOptions.forEach((nextPluginOptions) => {
+        rtn.nextProviderOptions?.forEach((nextProviderOptions) => {
           const workerOptionsClone = {
-            plugin: workerOptions.plugin,
+            provider: workerOptions.provider,
             hex: workerOptions.hex,
             triangles: workerOptions.triangles,
             bbox: workerOptions.bbox,
             category: workerOptions.category,
             tags: workerOptions.tags,
-            pluginOptions: nextPluginOptions,
+            providerOptions: nextProviderOptions,
             sessionId: workerOptions.sessionId
           };
           api.emit('splatone:start', workerOptionsClone);
@@ -1321,15 +1320,15 @@ try {
       io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, progress });
       if (!rtn.final) {
         // 次回クロール用に更新
-        rtn.nextPluginOptions.forEach((nextPluginOptions) => {
+        rtn.nextProviderOptions?.forEach((nextProviderOptions) => {
           const workerOptionsClone = {
-            plugin: workerOptions.plugin,
+            provider: workerOptions.provider,
             hex: workerOptions.hex,
             triangles: workerOptions.triangles,
             bbox: workerOptions.bbox,
             category: workerOptions.category,
             tags: workerOptions.tags,
-            pluginOptions: nextPluginOptions,
+            providerOptions: nextProviderOptions,
             sessionId: workerOptions.sessionId
           };
           api.emit('splatone:start', workerOptionsClone);
@@ -1364,7 +1363,7 @@ try {
         if (typeof value === 'function') return undefined;
         return value;
       }));
-      runTask(safeOptions.plugin, safeOptions);
+      runTask(safeOptions.provider, safeOptions);
     });
 
     await subscribe('splatone:finish', async workerOptions => {
@@ -1387,7 +1386,7 @@ try {
       const resultBundle = {
         version: 1,
         resultId,
-        plugin: argv.plugin,
+        provider: argv.provider,
         visualizers: visualizerNames,
         visOptions: effectiveVisOptions,
         palette,
@@ -1397,7 +1396,7 @@ try {
       const bundleMeta = {
         version: resultBundle.version,
         resultId,
-        plugin: resultBundle.plugin,
+        provider: resultBundle.provider,
         visualizers: resultBundle.visualizers,
         visOptions: resultBundle.visOptions,
         palette: resultBundle.palette,
@@ -1516,7 +1515,7 @@ try {
     await open(`http://localhost:${port}`);
   });
 
-  process.on('SIGINT', async () => { await plugins.stopAll(); process.exit(0); });
+  process.on('SIGINT', async () => { await providers.stopAll(); process.exit(0); });
 } catch (e) {
   console.error("[SPLATONE ERROR]");
   console.error(e);

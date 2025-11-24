@@ -14,7 +14,7 @@
   - [最小コマンド例](#最小コマンド例)
   - [ブラウズ専用モード](#ブラウズ専用モード)
 - [詳細説明](#詳細説明)
-  - [Plugin (クローラー)](#plugin-クローラー)
+  - [Provider (クローラー)](#provider-クローラー)
     - [Flickr: Flickrのジオタグ付き写真を取得するクローラー](#flickr-flickrのジオタグ付き写真を取得するクローラー)
       - [コマンドライン引数](#コマンドライン引数)
       - [Flickr APIキーの与え方](#flickr-apiキーの与え方)
@@ -125,11 +125,11 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ```shell
 $ npx -y -p splatone@latest crawler --help
-[app] [plugin] loaded: flickr@1.0.0
+[app] [provider] loaded: flickr@1.0.0
 使い方: crawler.js [options]
 
 Basic Options
-  -p, --plugin       実行するプラグイン    [文字列] [選択してください: "flickr"]
+  -p, --provider     実行するプロバイダー  [文字列] [選択してください: "flickr"]
   -k, --keywords     検索キーワード(|区切り)               [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
   -f, --filed        大きなデータをファイルとして送受信する
@@ -153,7 +153,7 @@ UI Defaults
       --ui-polygon    UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文
                       字列                                              [文字列]
 
-For flickr Plugin
+For flickr Provider
       --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]
       --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は
                            記載の有無に関わらず保持)
@@ -273,8 +273,8 @@ For voronoi Visualizer
 
 ## <a name='-1'></a>最小コマンド例
 
-1. *plugin*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
-  * plugin: flickr
+1. *provider*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
+  * provider: flickr
   * visualizer: bulky
   * キーワード: canal,river|street,alley|bridge
 1. コマンドを実行するとWebブラウザで地図表示されるので、地図上の任意の位置に矩形あるいはポリゴンを描く
@@ -309,7 +309,7 @@ npx -y -p splatone@latest crawl --browse-mode
 
 # 詳細説明
 
-## <a name='Plugin'></a>Plugin (クローラー)
+## <a name='Provider'></a>Provider (クローラー)
 
 ### <a name='Flickr:Flickr'></a>Flickr: Flickrのジオタグ付き写真を取得するクローラー
 
@@ -332,11 +332,11 @@ APIキーは以下の３種類の方法で与える事ができます
   - **flickr**の場合は``` --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ```になります。
   - [注意] コマンドを他の人と共有する時、APIキーをそのまま渡す事は危険です。
 - 環境変数で渡す
-  - ```API_KEY_plugin```という環境変数に格納する
-  - コマンドに毎回含めなくて良くなる。
+  - `API_KEY_<provider>` という環境変数に格納する (例: `API_KEY_flickr`)
+    - コマンドに毎回含めなくて良くなる。
 - ファイルで渡す(npxでは不可)
-  - ルートディレクトリに```.API_KEY.plugin```というファイルを作成し保存
-    - ```plugin```はプラグイン名(flickr等)に置き換えてください。
+  - ルートディレクトリに```.API_KEY.<provider>```というファイルを作成し保存
+    - `<provider>`はプロバイダー名 (flickr 等) に置き換えてください。
   - **flickr**の場合は```.API_KEY.flickr```になります。
   - optionや環境変数で与えるよりも優先されます。
 

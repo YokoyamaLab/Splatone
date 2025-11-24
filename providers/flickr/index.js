@@ -1,29 +1,29 @@
-// plugins/flickr/index.js
+// providers/flickr/index.js
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PluginBase } from '../../lib/PluginBase.js';
+import { ProviderBase } from '../../lib/ProviderBase.js';
 import { bbox, polygon, centroid, booleanPointInPolygon, featureCollection } from '@turf/turf';
 import { loadAPIKey } from '#lib/splatone';
-export default class FlickrPlugin extends PluginBase {
+export default class FlickrProvider extends ProviderBase {
 
-    static name = 'Flickr Plugin';       // 任意
+    static name = 'Flickr Provider';       // 任意
     static description = 'Flickrからジオタグ付きデータを収集する。';
     static version = '1.0.0';
     constructor(api, options = {}) {
         super(api, options);
-        this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がプラグイン名) 
+        this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がプロバイダ名) 
     }
     async yargv(yargv) {
         // 必須項目にすると、このプラグインを使用しない時も必須になります。
         // 必須項目は作らず、もしプラグインを使う上での制約違反はinitで例外を投げてください。
         return yargv.option(this.argKey('APIKEY'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             type: 'string',
             description: 'Flickr ServiceのAPI KEY'
         }).coerce(this.argKey('APIKEY'), opt => {
             return opt
         }).option(this.argKey('Extras'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             type: 'string',
             default: 'date_upload,date_taken,owner_name,geo,url_s,tags',
             description: 'カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持)'
@@ -39,17 +39,17 @@ export default class FlickrPlugin extends PluginBase {
             });
             return Object.keys(extras).join(",");
         }).option(this.argKey('DateMode'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             choices: ['upload', 'taken'],
             default: "upload",
             description: '利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)'
         }).option(this.argKey('Haste'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             default: true,
             type: 'boolean',
             description: '時間軸分割並列処理'
         }).option(this.argKey('DateMax'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             type: 'string',
             default: Math.floor(new Date() / 1000) - 360,
             description: 'クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD'
@@ -74,7 +74,7 @@ export default class FlickrPlugin extends PluginBase {
             }
             throw new Error(`Invalid date/time format: ${opt} (YYYY-MM-DD または UNIX時間(秒)で指定してください)`);
         }).option(this.argKey('DateMin'), {
-            group: 'For ' + this.id + ' Plugin',
+            group: 'For ' + this.id + ' Provider',
             type: 'string',
             default: Math.round(new Date(2004, 1 - 1, 1, 0, 0, 0).getTime() / 1000),
             description: 'クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD'
@@ -118,7 +118,7 @@ export default class FlickrPlugin extends PluginBase {
     }
 
     // 任意の公開メソッド
-    async crawl({ hexGrid, triangles/*, tags*/, categories, sessionId, pluginOptions }) {
+    async crawl({ hexGrid, triangles/*, tags*/, categories, sessionId, providerOptions }) {
         if (!this.started) {
             this.start();
         }
@@ -142,13 +142,13 @@ export default class FlickrPlugin extends PluginBase {
                 //console.log("tag=",ck,"/",tags);
                 hexQuery[item.properties.hexId][ck] = { photos: [], tags, final: false };
                 this.api.emit('splatone:start', { //WorkerOptions
-                    plugin: this.id,
+                    provider: this.id,
                     hex: item,
                     triangles: getTrianglesInHex(item, triangles),
                     bbox: bbox(item.geometry),
                     category: ck,
                     tags,
-                    pluginOptions,
+                    providerOptions,
                     sessionId
                 });
             });

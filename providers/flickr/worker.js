@@ -38,13 +38,13 @@ function isTransientNetworkError(err) {
 export default async function ({
     port,
     debugVerbose,
-    plugin,
+    provider,
     hex,
     triangles,
     bbox,
     category,
     tags,
-    pluginOptions,
+    providerOptions,
     sessionId
 }) {
     debugVerbose = true;
@@ -55,19 +55,19 @@ export default async function ({
     };
 
     try {
-        const { flickr } = createFlickr(pluginOptions["APIKEY"]);
-        if (!pluginOptions.TermId) {
+        const { flickr } = createFlickr(providerOptions["APIKEY"]);
+        if (!providerOptions.TermId) {
             //初期TermId
-            pluginOptions.TermId = 'a';
+            providerOptions.TermId = 'a';
         }
         const baseParams = {
             bbox: bbox.join(','),
             tags: tags,
-            extras: pluginOptions["Extras"],
-            sort: pluginOptions["DateMode"] == "upload" ? "date-posted-desc" : "date-taken-desc"
+            extras: providerOptions["Extras"],
+            sort: providerOptions["DateMode"] == "upload" ? "date-posted-desc" : "date-taken-desc"
         };
-        baseParams[pluginOptions["DateMode"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = pluginOptions["DateMax"];
-        baseParams[pluginOptions["DateMode"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = pluginOptions["DateMin"];
+        baseParams[providerOptions["DateMode"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = providerOptions["DateMax"];
+        baseParams[providerOptions["DateMode"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = providerOptions["DateMin"];
         //console.log("[baseParams]",baseParams);
         const res = await fetchWithRetry(() => flickr("flickr.photos.search", {
             ...baseParams,
@@ -94,7 +94,7 @@ export default async function ({
             [photo.longitude, photo.latitude],
             {
                 ...photo,
-                splatone_plugin: 'flickr',
+                splatone_provider: 'flickr',
                 splatone_hexId: hex.properties.hexId,
                 splatone_triId: getTriangleContainingPoint(point([photo.longitude, photo.latitude]), triangles),
             }
@@ -103,10 +103,10 @@ export default async function ({
     const outside = res.photos.photo.length - photos.features.length;
     //console.log(JSON.stringify(photos, null, 4));
 
-    const nextPluginOptionsDelta = [];
+    const nextProviderOptionsDelta = [];
     if (res.photos.photo.length == 0) {
         if (debugVerbose) {
-            console.log(`Zero (${hex.properties.hexId} - ${category} - ${pluginOptions.TermId})`);
+            console.log(`Zero (${hex.properties.hexId} - ${category} - ${providerOptions.TermId})`);
         }
     } else {
         let minDate, maxDate;
@@ -114,7 +114,7 @@ export default async function ({
             minDate = res.photos.photo[res.photos.photo.length - 1].dateupload;
             maxDate = res.photos.photo[0].dateupload
 
-            if (pluginOptions["DateMode"] == "taken") {
+            if (providerOptions["DateMode"] == "taken") {
                 minDate = toUnixSeconds(res.photos.photo[res.photos.photo.length - 1].datetaken)
                 maxDate = toUnixSeconds(res.photos.photo[0].datetaken);
             }
@@ -134,34 +134,34 @@ export default async function ({
             }
             next_max_date -= 60 * 60 * skip;
         }
-        if (pluginOptions["Haste"] && res.photos.pages > 4) {
+        if (providerOptions["Haste"] && res.photos.pages > 4) {
             //結果の最大・最小を2分割
-            const mid = Math.round(((next_max_date - pluginOptions.DateMin) / 2) + pluginOptions.DateMin);
+            const mid = Math.round(((next_max_date - providerOptions.DateMin) / 2) + providerOptions.DateMin);
             if (debugVerbose) {
-                console.log(`Split(${hex.properties.hexId} - ${category} - ${pluginOptions.TermId}):`, pluginOptions.DateMin, mid, next_max_date);
+                console.log(`Split(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, mid, next_max_date);
             }
-            nextPluginOptionsDelta.push({
+            nextProviderOptionsDelta.push({
                 'DateMax': next_max_date,
                 'DateMin': mid,
-                'TermId': pluginOptions.TermId + 'a'
+                'TermId': providerOptions.TermId + 'a'
             });
-            nextPluginOptionsDelta.push({
+            nextProviderOptionsDelta.push({
                 'DateMax': mid,
-                'DateMin': pluginOptions.DateMin,
-                'TermId': pluginOptions.TermId + 'b'
+                'DateMin': providerOptions.DateMin,
+                'TermId': providerOptions.TermId + 'b'
             });
         } else if (res.photos.photo.length < res.photos.total) {
             if (debugVerbose) {
-                console.log(`Continue[${res.photos.pages} pages](${hex.properties.hexId} - ${category} - ${pluginOptions.TermId}):`, pluginOptions.DateMin, next_max_date);
+                console.log(`Continue[${res.photos.pages} pages](${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, next_max_date);
             }
-            nextPluginOptionsDelta.push({
+            nextProviderOptionsDelta.push({
                 'DateMax': next_max_date,
-                'DateMin': pluginOptions.DateMin,
+                'DateMin': providerOptions.DateMin,
             });
         } else {
             //final
             if (debugVerbose) {
-                console.log(`Final(${hex.properties.hexId} - ${category} - ${pluginOptions.TermId}):`, pluginOptions.DateMin, next_max_date);
+                console.log(`Final(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, next_max_date);
             }
         }
     }
@@ -171,12 +171,12 @@ export default async function ({
                 hexId: hex.properties.hexId,
                 tags,
                 category,
-                nextPluginOptions: nextPluginOptionsDelta.map(e => { return { ...pluginOptions, ...e } }),
-                TermId: pluginOptions.TermId,
+                nextProviderOptions: nextProviderOptionsDelta.map(e => { return { ...providerOptions, ...e } }),
+                TermId: providerOptions.TermId,
                 remaining:  res.photos.total - res.photos.photo.length,
                 outside: outside,
                 ids,
-                final: nextPluginOptionsDelta.length == 0
+                final: nextProviderOptionsDelta.length == 0
             }
         };
 
@@ -196,8 +196,8 @@ export default async function ({
                 hexId: hex?.properties?.hexId ?? null,
                 tags,
                 category,
-                nextPluginOptions: [],
-                TermId: pluginOptions.TermId,
+                nextProviderOptions: [],
+                TermId: providerOptions.TermId,
                 remaining: 0,
                 outside: 0,
                 ids: [],
