@@ -141,7 +141,7 @@
     const browseMode = <%- JSON.stringify(Boolean(browseMode)) %>;
     const cliContext = {
       baseCommand: <%- JSON.stringify(cliBaseCommand || '') %>,
-      plugin: <%- JSON.stringify(selectedPlugin || '') %>,
+      provider: <%- JSON.stringify(selectedProvider || '') %>,
       visualizers: <%- JSON.stringify(selectedVisualizers || []) %>,
     };
     const socket = io({
@@ -273,8 +273,8 @@
     function buildCliCommandString() {
       if (!cliContext?.baseCommand) return '';
       const parts = [cliContext.baseCommand.trim()].filter(Boolean);
-      if (cliContext.plugin) {
-        parts.push('-p', cliContext.plugin);
+      if (cliContext.provider) {
+        parts.push('-p', cliContext.provider);
       }
       if (Array.isArray(cliContext.visualizers)) {
         cliContext.visualizers.forEach((vis) => {

@@ -3,5 +3,68 @@
         "Geotag",
         "geotags",
         "Voronoi"
-    ]
+    ],
+    "latex-workshop.latex.tools": [
+        {
+            "name": "ptex2pdf(platex)_ja",
+            "command": "ptex2pdf",
+            "args": [
+                "-interaction=nonstopmode",
+                "-l",
+                "-ot",
+                "-kanji=utf8",
+                "-synctex=1",
+                "%DOC%"
+            ]
+        },
+        {
+            "name": "ptex2pdf(uplatex)_ja",
+            "command": "ptex2pdf",
+            "args": [
+                "-interaction=nonstopmode", // エラーが発生しても処理を中断せずに続行するモードです。
+                "-l", // LaTeXベースのフォーマットを使用することを指定します。具体的には、uplatexやplatexを使用する場合に指定します。
+                "-u", // uplatexを使用することを指定します。
+                "-ot", // TeXコンパイラに追加のオプションを渡すためのオプションです。例えば、-synctex=1などのオプションを指定することができます。
+                "-kanji=utf8", // 日本語の文字エンコーディングをUTF-8に設定します。
+                "-synctex=1", // SyncTeXを有効にします。SyncTeXは、ソースファイルとPDFファイル間の相互参照を可能にする機能で、PDFビューアとエディタ間でのジャンプが容易になります。
+                "%DOC%" // 処理するTeXファイルのプレースホルダーです。実際のファイル名に置き換えられます。
+            ]
+        },
+        {
+            "command": "pbibtex",
+            "args": [
+                "%DOCFILE%",
+                "-kanji=utf8"
+            ],
+            "name": "pbibtex"
+        }
+    ],
+       "latex-workshop.latex.recipes": [
+       {
+                "name": "Latexmk(lualatex)",
+                "tools": [
+                    "Latexmk(lualatex)",
+                ]
+            },
+    ],
+    "latex-workshop.latex.tools": [
+		{
+                "name": "Latexmk(lualatex)",
+                "command": "latexmk",
+                "args": [
+                    "-e",
+                    "$lualatex=q/lualatex %O -synctex=1 -interaction=nonstopmode -file-line-error %S/",
+                    "-e",
+                    "$bibtex=q/upbibtex %O %B/",
+                    "-e",
+                    "$biber=q/biber %O --bblencoding=utf8 -u -U --output_safechars %B/",
+                    "-e",
+                    "$makeindex=q/upmendex %O -o %D %S/",
+                    "-norc",
+                    "-gg",
+                    "-pdflua",
+                    "%DOC%"
+                ],
+            },
+    ],
 }
