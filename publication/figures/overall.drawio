@@ -4,6 +4,51 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="HDyJnycrSyqTmrrECldY-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="310" width="140" x="170" y="78" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="310" width="140" x="620" y="78" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="310" width="140" x="420" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Flickr" vertex="1">
+          <mxGeometry height="40" width="80" x="40" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Google Maps" vertex="1">
+          <mxGeometry height="40" width="80" x="40" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="OSM" vertex="1">
+          <mxGeometry height="40" width="80" x="40" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Flickr&lt;div&gt;Provider&lt;/div&gt;" vertex="1">
+          <mxGeometry height="40" width="80" x="200" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Google Maps&lt;br&gt;&lt;div&gt;Provider&lt;/div&gt;" vertex="1">
+          <mxGeometry height="40" width="80" x="200" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="OSM&lt;br&gt;&lt;div&gt;Provider&lt;/div&gt;" vertex="1">
+          <mxGeometry height="40" width="80" x="200" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-11" edge="1" parent="1" source="HDyJnycrSyqTmrrECldY-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="HDyJnycrSyqTmrrECldY-9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;div&gt;Bulky&lt;/div&gt;Visualizer Node" vertex="1">
+          <mxGeometry height="40" width="100" x="440" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;div&gt;Bulky&lt;/div&gt;Visualizer Web" vertex="1">
+          <mxGeometry height="40" width="100" x="640" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-16" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Piscina&lt;div&gt;Worker Pool&lt;/div&gt;" vertex="1">
+          <mxGeometry height="30" width="140" x="170" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-17" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Web/Websocket Server" vertex="1">
+          <mxGeometry height="30" width="140" x="420" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="HDyJnycrSyqTmrrECldY-18" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Web Browser" vertex="1">
+          <mxGeometry height="30" width="140" x="620" y="80" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
