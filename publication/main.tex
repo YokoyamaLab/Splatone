@@ -22,6 +22,10 @@
 \geometry{margin=25mm}
 \usepackage{listings}
 \usepackage{xcolor} % 色を使う場合
+\usepackage{svg}
+
+\svgpath{{figures/}}
+%\svgsetup{inkscapelatex=true, inkscapepath={C:/Program Files/Inkscape/bin/}}
 
 \lstdefinestyle{commandline}{
   basicstyle=\ttfamily\small,
@@ -180,6 +184,13 @@ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge"
 コマンドを実行すると、Webブラウザが立ち上がり地図が表示される。ここで任意の場所を矩形ツールで指定しStart Crawlingボタンを押下する事で、クローリングが開始される。しばらくたつと当該領域の指定したキーワードを持つジオタグ付き写真の収集が完了し、地図上に表示される。
 
 コマンドを実行すると、Webブラウザが立ち上がり地図が表示される。ここで任意の場所を矩形ツールで指定しStart Crawlingボタンを押下する事で、クローリングが開始される。しばらくたつと当該領域の指定したキーワードを持つジオタグ付き写真の収集が完了し、地図上に表示される。
+
+\begin{figure}[h]
+  \centering
+  \includesvg[width=0.7\textwidth,inkscapelatex=false]{overall}
+  \caption{Splatone Crawler の全体構成}
+  \label{fig:architecture}
+\end{figure}
 
 \begin{figure}[h]
   \centering
