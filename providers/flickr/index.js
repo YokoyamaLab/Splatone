@@ -1,6 +1,7 @@
 // providers/flickr/index.js
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdir } from 'node:fs/promises';
 import { ProviderBase } from '../../lib/ProviderBase.js';
 import { bbox, polygon, centroid, booleanPointInPolygon, featureCollection } from '@turf/turf';
 import { loadAPIKey } from '#lib/splatone';
@@ -25,11 +26,11 @@ export default class FlickrProvider extends ProviderBase {
         }).option(this.argKey('Extras'), {
             group: 'For ' + this.id + ' Provider',
             type: 'string',
-            default: 'date_upload,date_taken,owner_name,geo,url_s,tags',
+            default: 'date_upload,date_taken,owner_name,geo,url_sq,tags',
             description: 'カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持)'
         }).coerce(this.argKey('Extras'), opt => {
             const fields = ['description', 'license', 'date_upload', 'date_taken', 'owner_name', 'icon_server', 'original_format', 'last_update', 'geo', 'tags', 'machine_tags', 'o_dims', 'views', 'media', 'path_alias', 'url_sq', 'url_t', 'url_s', 'url_q', 'url_m', 'url_n', 'url_z', 'url_c', 'url_l', 'url_o'];
-            const extras = { 'date_upload': true, 'date_taken': true, 'owner_name': true, 'geo': true, 'url_s': true, 'tags': true };
+            const extras = { 'date_upload': true, 'date_taken': true, 'owner_name': true, 'geo': true, 'url_sq': true, 'tags': true };
             opt.split(',').forEach(f => {
                 if (fields.includes(f)) {
                     extras[f] = true;
@@ -48,6 +49,10 @@ export default class FlickrProvider extends ProviderBase {
             default: true,
             type: 'boolean',
             description: '時間軸分割並列処理'
+        }).option(this.argKey('GimmeGimme'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'string',
+            description: 'Flickr画像を保存するディレクトリパス(指定しない場合は保存しない)'
         }).option(this.argKey('DateMax'), {
             group: 'For ' + this.id + ' Provider',
             type: 'string',
@@ -109,6 +114,11 @@ export default class FlickrProvider extends ProviderBase {
             options['APIKEY'] = apikey;
         } else if (!RE_FLICKR_API_KEY.test(options['APIKEY'])) {
             throw new Error('Invalid Flickr API key format: 32桁 16進数で指定してください');
+        }
+        if (options['GimmeGimme']) {
+            const resolved = path.resolve(options['GimmeGimme']);
+            await mkdir(resolved, { recursive: true });
+            options['GimmeGimme'] = resolved;
         }
         return options;
     }

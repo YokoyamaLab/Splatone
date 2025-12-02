@@ -4,11 +4,8 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
+    - [v0.0.23 → →　v0.0.25](#v0023--v0025)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
-    - [v0.0.18 → →　v0.0.22](#v0018--v0022)
-    - [v0.0.17 →　v0.0.18](#v0017-v0018)
-    - [v0.0.13 → →　v0.0.17](#v0013--v0017)
-    - [v0.0.12 →　v0.0.13](#v0012-v0013)
 - [使い方](#使い方)
   - [Helpの表示](#helpの表示)
   - [最小コマンド例](#最小コマンド例)
@@ -17,6 +14,7 @@
   - [Provider (クローラー)](#provider-クローラー)
     - [Flickr: Flickrのジオタグ付き写真を取得するクローラー](#flickr-flickrのジオタグ付き写真を取得するクローラー)
       - [コマンドライン引数](#コマンドライン引数)
+      - [GimmeGimmeモードで取得する写真とそのファイル名について](#gimmegimmeモードで取得する写真とそのファイル名について)
       - [Flickr APIキーの与え方](#flickr-apiキーの与え方)
   - [Visualizer (可視化モジュール)](#visualizer-可視化モジュール)
     - [Bulky: 全ての点を地図上にポイントする](#bulky-全ての点を地図上にポイントする)
@@ -77,6 +75,13 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## <a name='ChangeLog'></a>Change Log
 
+### <a name='v0.0.23v0.0.25'></a>v0.0.23 → →　v0.0.25
+
+* Flickrプロバイダ
+  * GimmeGimmeモード追加: Flickrから画像を指定ディレクトリにダウンロード
+* Bulkeyビジュアライザ
+  * PointMarkerをクリックしてFlickrの当該写真のページへ飛ぶ
+
 ### <a name='v0.0.22v0.0.23'></a>v0.0.22 → →　v0.0.23
 
 * ブラウズモードの追加
@@ -89,32 +94,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 * カラーパレット生成ツールの改良
   * ブラウザ上でカラーの確認と調整を可能に
 
-### <a name='v0.0.18v0.0.22'></a>v0.0.18 → →　v0.0.22
-
-* **[可視化モジュール]** ```--vis-voronoi```追加
-  * ボロノイ図の生成
-* **[可視化モジュール]** ```--vis-pie-charts```追加
-  * Hex中心のカテゴリ割合Pie Chart描画
-* マイナーBug Fix
-
-### <a name='v0.0.17v0.0.18'></a>v0.0.17 →　v0.0.18
-
-* **[可視化モジュール]** ```--vis-heat```追加
-  * ヒートマップの生成
-
-### <a name='v0.0.13v0.0.17'></a>v0.0.13 → →　v0.0.17
-
-* **[可視化モジュール]** ```--vis-majority-hex```追加
-* 結果の色固定機能追加 (キーワード指定方法を参照の事)
-* [Bug Fix] npxが起動しない事象の修正
-
-### <a name='v0.0.12v0.0.13'></a>v0.0.12 →　v0.0.13
-
-* BulkyのPointMarkerのサイズや透明度を可変に
-  * コマンドライン引数で指定 (詳しくは```  npx -y -p splatone@latest crawler --help```)
-
 [これ以前のログ](CHANGELOG.md)
-
 
 # 使い方
 
@@ -129,7 +109,7 @@ $ npx -y -p splatone@latest crawler --help
 使い方: crawler.js [options]
 
 Basic Options
-  -p, --provider     実行するプロバイダー  [文字列] [選択してください: "flickr"]
+  -p, --provider     実行するプロバイダ    [文字列] [選択してください: "flickr"]
   -k, --keywords     検索キーワード(|区切り)               [文字列] [デフォルト:
                        "nature,tree,flower|building,house|water,sea,river,pond"]
   -f, --filed        大きなデータをファイルとして送受信する
@@ -154,16 +134,19 @@ UI Defaults
                       字列                                              [文字列]
 
 For flickr Provider
-      --p-flickr-APIKEY    Flickr ServiceのAPI KEY                      [文字列]
-      --p-flickr-Extras    カンマ区切り/保持する写真のメタデータ(デフォルト値は
-                           記載の有無に関わらず保持)
-       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_s,tags"]
-      --p-flickr-DateMode  利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)
+      --p-flickr-APIKEY      Flickr ServiceのAPI KEY                    [文字列]
+      --p-flickr-Extras      カンマ区切り/保持する写真のメタデータ(デフォルト値
+                 は記載の有無に関わらず保持)
+       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_sq,tags"]
+      --p-flickr-DateMode    利用時間軸(update=Flickr投稿日時/taken=写真撮影日時
+                             )
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
-      --p-flickr-Haste     時間軸分割並列処理          [真偽] [デフォルト: true]
-      --p-flickr-DateMax   クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1763517169]
-      --p-flickr-DateMin   クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
+      --p-flickr-Haste       時間軸分割並列処理        [真偽] [デフォルト: true]
+      --p-flickr-GimmeGimme  Flickr画像を保存するディレクトリパス(指定しない場合
+                             は保存しない)                              [文字列]
+      --p-flickr-DateMax     クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
+                                               [文字列] [デフォルト: 1764650118]
+      --p-flickr-DateMin     クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
 Visualization (最低一つの指定が必須です)
@@ -197,7 +180,7 @@ For bulky Visualizer
 
 For dbscan Visualizer
       --v-dbscan-Eps             DBSCANのeps（クラスタ判定距離） | min=0.01,
-                                 step=0.01             [数値] [デフォルト: 0.02]
+                                 step=0.01              [数値] [デフォルト: 0.6]
       --v-dbscan-MinPts          DBSCANのminPts（クラスタ確定に必要な点数） |
                                  min=1, step=1            [数値] [デフォルト: 6]
       --v-dbscan-Units           epsで使用する距離単位
@@ -219,19 +202,19 @@ For dbscan Visualizer
                                  max=0.95, step=0.05    [数値] [デフォルト: 0.4]
 
 For heat Visualizer
-  --v-heat-Radius      ヒートマップブラーの半径（Unitsで選んだ距離単位） |
-           min=0, step=1                [数値] [デフォルト: 50]
-  --v-heat-Units       Radiusに使用する距離単位
-   [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
-                        "meters"]
-      --v-heat-MinOpacity  ヒートマップの最小透明度 | min=0, max=1, step=0.05
-                                                          [数値] [デフォルト: 0]
-      --v-heat-MaxOpacity  ヒートマップの最大透明度 | min=0, max=1, step=0.05
-                                                          [数値] [デフォルト: 1]
-      --v-heat-MaxValue    ヒートマップ強度の最大値
-                           (未指定時はデータから自動推定) | step=1        [数値]
-  --v-heat-WeightThreshold  半径内に存在する近傍点数（自分以外）がこの値未満
-           の点は描画しない | min=0, step=1 [数値] [デフォルト: 1]
+      --v-heat-Radius           ヒートマップブラーの半径（Unitsで指定した距離単
+                                位） | min=0, step=1     [数値] [デフォルト: 50]
+      --v-heat-Units            Radiusに使用する距離単位
+       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
+                                                                       "meters"]
+      --v-heat-MinOpacity       ヒートマップの最小透明度 | min=0, max=1,
+                                step=0.05                 [数値] [デフォルト: 0]
+      --v-heat-MaxOpacity       ヒートマップの最大透明度 | min=0, max=1,
+                                step=0.05                 [数値] [デフォルト: 1]
+      --v-heat-MaxValue         ヒートマップ強度の最大値
+                                (未指定時はデータから自動推定) | step=1   [数値]
+      --v-heat-WeightThreshold  半径内の近傍点数（自分以外）がこの値未満の点は描
+                                画しない | min=0, step=1  [数値] [デフォルト: 1]
 
 For majority-hex Visualizer
       --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
@@ -323,11 +306,19 @@ npx -y -p splatone@latest crawl --browse-mode
 | オプション                | 説明                                                                          | 型             | デフォルト   |
 | :------------------------ | :---------------------------------------------------------------------------- | :------------- | :----------- |
 | ```--p-flickr-APIKEY```   | Flickr ServiceのAPI KEY                                                       | 文字列         |              |
-| ```--p-flickr-Extras```   | カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持) | 文字列         | date_upload  |,date_taken,owner_name,geo,url_s,tags
+| ```--p-flickr-Extras```   | カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持) | 文字列         | date_upload  |,date_taken,owner_name,geo,url_sq,tags
 | ```--p-flickr-DateMode``` | 利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)                          | 選択: "upload" | "taken"      |,"upload"
 | ```--p-flickr-Haste```    | 時間軸分割並列処理                                                            | 真偽           | true         |
+| ```--p-flickr-GimmeGimme``` | 取得した画像を保存するディレクトリ（未指定時はダウンロードせず／失敗時は同名txtで記録） | 文字列         |               |
 | ```--p-flickr-DateMax```  | クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | (動的)現時刻 |
 | ```--p-flickr-DateMin```  | クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | 1072882800   |
+
+#### <a name='GimmeGimme'></a>GimmeGimmeモードで取得する写真とそのファイル名について
+- ```--p-flickr-GimmeGimme=保存ディレクトリのパス```のように指定してください。
+  - カレントディレクトリに保存する場合は```--p-flickr-GimmeGimme=.```です
+- extrasに```url_sq, url_t, url_s, url_q, url_m, url_n, url_z, url_c, url_l, url_o```の一つまたは複数が指定されているときは解像度の高いものが保存されます。
+- ファイル名にジオタグ等を含めていますので画像のみである程度地理的な分析が可能です。
+  -  {カテゴリ名}-{緯度}-{経度}-{撮影時刻UNIX秒}-{owner}-{id}-{サイズ}.jpg
 
 #### <a name='FlickrAPI'></a>Flickr APIキーの与え方
 
@@ -349,7 +340,7 @@ APIキーは以下の３種類の方法で与える事ができます
 
 ### <a name='Bulky:'></a>Bulky: 全ての点を地図上にポイントする
 
-全ての点を地図上に表示する。
+全ての点を地図上に表示する。マーカーをクリックすると対応するFlickr写真ページが新しいタブで開く。
 
 ![](assets/screenshot_sea-mountain_bulky.png?raw=true)
 
