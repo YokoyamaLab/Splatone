@@ -4,7 +4,7 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
-    - [v0.0.23 → →　v0.0.25](#v0023--v0025)
+    - [v0.0.23 → →　v0.0.28](#v0023--v0028)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
 - [使い方](#使い方)
   - [Helpの表示](#helpの表示)
@@ -75,13 +75,13 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## <a name='ChangeLog'></a>Change Log
 
-### <a name='v0.0.23v0.0.25'></a>v0.0.23 → →　v0.0.25
+### <a name='v0.0.23v0.0.28'></a>v0.0.23 → →　v0.0.28
 
 * Flickrプロバイダ
   * GimmeGimmeモード追加: Flickrから画像を指定ディレクトリにダウンロード
 * Bulkeyビジュアライザ
   * PointMarkerをクリックしてFlickrの当該写真のページへ飛ぶ
-* NPX起動時にproverderが読み込まれない問題を解決
+* NPX起動時にproverderやoutが読み込まれない問題を解決
 
 ### <a name='v0.0.22v0.0.23'></a>v0.0.22 → →　v0.0.23
 
