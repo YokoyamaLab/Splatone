@@ -8,8 +8,9 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import path, { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import fs, { existsSync, writeFileSync, constants } from 'node:fs';
-import { access, readdir, readFile } from 'node:fs/promises';
+import fs, { existsSync, writeFileSync, constants, createWriteStream } from 'node:fs';
+import { access, readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { pipeline as streamPipeline } from 'node:stream/promises';
 import { MessageChannel } from 'worker_threads';
 
 // -------------------------------
@@ -31,7 +32,7 @@ import { hideBin } from 'yargs/helpers';
 import { loadProviders } from './lib/providerLoader.js';
 import paletteGenerator from './lib/paletteGenerator.js';
 import chroma from 'chroma-js';
-import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildProvidersOptions, loadAPIKey, buildVisualizersOptions } from '#lib/splatone';
+import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildProvidersOptions, loadAPIKey, buildVisualizersOptions, toUnixSeconds } from '#lib/splatone';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,6 +54,188 @@ const RAW_FILE_BASENAME = (sessionId) => `raw.${sessionId}.json`;
 const RAW_FILE_REGEX = /^raw\.[a-zA-Z0-9_-]+\.json$/;
 
 const visualizerOptionSchemas = {};
+
+const FLICKR_URL_PRIORITY = [
+  { key: 'url_o', sizeTag: 'o' },
+  { key: 'url_l', sizeTag: 'l' },
+  { key: 'url_c', sizeTag: 'c' },
+  { key: 'url_z', sizeTag: 'z' },
+  { key: 'url_n', sizeTag: 'n' },
+  { key: 'url_m', sizeTag: 'm' },
+  { key: 'url_q', sizeTag: 'q' },
+  { key: 'url_s', sizeTag: 's' },
+  { key: 'url_t', sizeTag: 't' },
+  { key: 'url_sq', sizeTag: 'sq' }
+];
+const IMAGE_DOWNLOAD_CONCURRENCY = 5;
+const INVALID_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1F]/g;
+
+const ensureDirectoryExists = async (dir) => {
+  if (!dir) return;
+  await mkdir(dir, { recursive: true });
+};
+
+const fileExistsAsync = async (filePath) => {
+  try {
+    await access(filePath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const sanitizeFilenameComponent = (value) => {
+  const normalized = String(value ?? '').trim().replace(INVALID_FILENAME_CHARS, '_').replace(/\s+/g, '_');
+  if (normalized) {
+    return normalized.slice(0, 80);
+  }
+  return `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const pickFlickrImageSource = (properties = {}) => {
+  for (const { key, sizeTag } of FLICKR_URL_PRIORITY) {
+    const url = properties[key];
+    if (url) {
+      return { url, sizeTag };
+    }
+  }
+  return null;
+};
+
+const formatCoordinatePart = (value) => {
+  if (!Number.isFinite(value)) {
+    return 'unknown';
+  }
+  return value.toFixed(6);
+};
+
+const resolveCoordinate = (...candidates) => {
+  for (const candidate of candidates) {
+    const num = Number(candidate);
+    if (Number.isFinite(num)) {
+      return num;
+    }
+  }
+  return null;
+};
+
+const resolveUnixTimestamp = (properties = {}) => {
+  const takenString = properties.datetaken ?? properties.date_taken;
+  if (takenString) {
+    try {
+      const takenUnix = toUnixSeconds(takenString);
+      if (Number.isFinite(takenUnix)) {
+        return takenUnix;
+      }
+    } catch {
+      // ignore parse errors and fall back to other sources
+    }
+  }
+  const uploadRaw = properties.dateupload ?? properties.date_upload;
+  const uploadUnix = Number(uploadRaw);
+  if (Number.isFinite(uploadUnix)) {
+    return uploadUnix;
+  }
+  return null;
+};
+
+const formatTimestampPart = (value) => {
+  if (!Number.isFinite(value)) {
+    return 'unknown';
+  }
+  return Math.floor(value).toString();
+};
+
+const writeErrorLog = async (dir, baseName, message) => {
+  if (!dir) return;
+  await ensureDirectoryExists(dir);
+  const logPath = path.join(dir, `${baseName}.txt`);
+  const stamp = new Date().toISOString();
+  const body = `[${stamp}] ${message}\n`;
+  await writeFile(logPath, body, { encoding: 'utf8', flag: 'a' });
+};
+
+const downloadImageToFile = async (url, destination) => {
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  }
+  await ensureDirectoryExists(path.dirname(destination));
+  await streamPipeline(response.body, createWriteStream(destination));
+};
+
+const downloadFlickrImages = async (features, outputDir, context = {}) => {
+  if (!outputDir || !Array.isArray(features) || features.length === 0) {
+    return;
+  }
+  await ensureDirectoryExists(outputDir);
+  const queue = [...features];
+  const workers = Array.from({ length: Math.min(IMAGE_DOWNLOAD_CONCURRENCY, queue.length) }, () => (async () => {
+    while (queue.length) {
+      const feature = queue.pop();
+      if (!feature) {
+        break;
+      }
+      const properties = feature?.properties ?? {};
+      const coords = Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates : [null, null];
+      const [lonRaw, latRaw] = coords;
+      const lonValue = resolveCoordinate(lonRaw, properties.longitude, properties.lon);
+      const latValue = resolveCoordinate(latRaw, properties.latitude, properties.lat);
+      const latPart = formatCoordinatePart(latValue);
+      const lonPart = formatCoordinatePart(lonValue);
+      const categoryPart = sanitizeFilenameComponent(context.category ?? 'category');
+      const idPart = sanitizeFilenameComponent(properties.id ?? 'id');
+      const timestampValue = resolveUnixTimestamp(properties);
+      const timestampPart = formatTimestampPart(timestampValue);
+      const ownerPart = sanitizeFilenameComponent(properties.owner ?? properties.owner_name ?? properties.ownername ?? 'owner');
+      const source = pickFlickrImageSource(properties);
+      if (!source) {
+        const baseNameFallback = `${categoryPart}-${latPart}-${lonPart}-${timestampPart}-${ownerPart}-${idPart}-unknown`;
+        const sanitizedFallback = sanitizeFilenameComponent(baseNameFallback);
+        await writeErrorLog(outputDir, sanitizedFallback, `画像URLが存在しません (hex=${context.hexId ?? 'n/a'}, category=${context.category ?? 'n/a'})`);
+        continue;
+      }
+      const sizeTag = source.sizeTag ?? 'unknown';
+      const baseRaw = `${categoryPart}-${latPart}-${lonPart}-${timestampPart}-${ownerPart}-${idPart}-${sizeTag}`;
+      const baseName = sanitizeFilenameComponent(baseRaw);
+      const imagePath = path.join(outputDir, `${baseName}.jpg`);
+      if (await fileExistsAsync(imagePath)) {
+        continue;
+      }
+      try {
+        await downloadImageToFile(source.url, imagePath);
+      } catch (err) {
+        await writeErrorLog(outputDir, baseName, `ダウンロード失敗: ${source.url} (${err?.message || err})`);
+      }
+    }
+  })());
+  await Promise.all(workers);
+};
+
+const isSessionFullyComplete = (crawler = {}, target = {}) => {
+  const hexFeatures = target?.hex?.features ?? [];
+  const categoryKeys = Object.keys(target?.categories ?? {});
+  if (hexFeatures.length === 0 || categoryKeys.length === 0) {
+    return false;
+  }
+  for (const feature of hexFeatures) {
+    const hexId = feature?.properties?.hexId;
+    if (hexId == null) {
+      return false;
+    }
+    const hexEntry = crawler[hexId];
+    if (!hexEntry) {
+      return false;
+    }
+    for (const categoryKey of categoryKeys) {
+      const categoryEntry = hexEntry[categoryKey];
+      if (!categoryEntry?.final) {
+        return false;
+      }
+    }
+  }
+  return true;
+};
 
 function normalizeUiCellSize(value) {
   const num = Number(value);
@@ -1196,110 +1379,113 @@ try {
     const filename = resolveWorkerFilename(taskName); // ← file URL (href)
     const workerContext = data;
     // named export を呼ぶ場合は { name: "関数名" } を追加
-    port1.on('message', (workerResults) => {
-      // ここでログ／WebSocket通知／DB書き込みなど何でもOK
-      const rtn = workerResults?.results;
-      if (!rtn) {
-        console.warn('[splatone:start] Received malformed worker payload, skipping chunk.');
-        return;
-      }
-      if (!workerContext) {
-        console.warn('[splatone:start] Missing worker context, skipping chunk.');
-        return;
-      }
-      const workerOptions = workerContext;
-      const currentSessionId = workerOptions.sessionId;
-      const currentProcessing = (processing[currentSessionId] ?? 0) - 1;
-      processing[currentSessionId] = Math.max(0, currentProcessing);
-      const sessionCrawler = crawlers[currentSessionId];
-      if (!sessionCrawler) {
+    port1.on('message', async (workerResults) => {
+      try {
+        // ここでログ／WebSocket通知／DB書き込みなど何でもOK
+        const rtn = workerResults?.results;
+        if (!rtn) {
+          console.warn('[splatone:start] Received malformed worker payload, skipping chunk.');
+          return;
+        }
+        if (!workerContext) {
+          console.warn('[splatone:start] Missing worker context, skipping chunk.');
+          return;
+        }
+        const workerOptions = workerContext;
+        const currentSessionId = workerOptions.sessionId;
+        const currentProcessing = (processing[currentSessionId] ?? 0) - 1;
+        processing[currentSessionId] = Math.max(0, currentProcessing);
+        const sessionCrawler = crawlers[currentSessionId];
+        if (!sessionCrawler) {
+          if (argv.debugVerbose) {
+            console.warn(`[session ${currentSessionId}] Received worker result after session disposal. Dropping chunk.`);
+          }
+          return;
+        }
+        if (rtn.error) {
+          console.warn(`[worker error] hex=${rtn.hexId} category=${rtn.category} code=${rtn.error.code ?? 'n/a'} message=${rtn.error.message ?? 'unknown'}`);
+        }
+        sessionCrawler[rtn.hexId] ??= {};
+        sessionCrawler[rtn.hexId][rtn.category] ??= {};
+        sessionCrawler[rtn.hexId][rtn.category].terms ??= {};
+        if (!sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId]) {
+          //一つ上のTermIdを100%に更新。ラベルはPrefixLabelingなのでrtn.TermId.slice(0,-1)となる。
+          const prevTermId = rtn.TermId.slice(0, -1);
+          if (sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId] && !sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final) {
+            sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final = true;
+            sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].remaining = 0;
+          }
+        }
+        sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId] ??= {};
+        sessionCrawler[rtn.hexId][rtn.category].items ??= featureCollection([]);
+        sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
+
+        const currentHex = sessionCrawler[rtn.hexId];
+        const currentHexCategory = currentHex[rtn.category];
+        const idSet = currentHexCategory.ids;
+        let duplicateCount = 0;
+        const uniqueFeatures = [];
+        for (const feature of rtn.photos.features) {
+          const featureId = feature?.properties?.id;
+          if (featureId != null && idSet.has(featureId)) {
+            duplicateCount++;
+            continue;
+          }
+          if (featureId != null) {
+            idSet.add(featureId);
+          }
+          uniqueFeatures.push(feature);
+        }
+
+        currentHexCategory.terms[rtn.TermId].remaining = rtn.remaining;
+        currentHexCategory.terms[rtn.TermId].final = rtn.final;
+        if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
+          console.error('[ERROR] ALL DUPLICATE');
+        }
+        const hexCategoryRemaining = Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
+        currentHexCategory.remaining = hexCategoryRemaining;
+        currentHexCategory.total = hexCategoryRemaining + idSet.size;
+        currentHexCategory.crawled = idSet.size;
+        const allTermsFinal = Object.values(currentHexCategory.terms).every(term => term.final);
+        currentHexCategory.final = allTermsFinal && hexCategoryRemaining === 0;
+
         if (argv.debugVerbose) {
-          console.warn(`[session ${currentSessionId}] Received worker result after session disposal. Dropping chunk.`);
+          console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicateCount}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${currentHexCategory.crawled} / ${currentHexCategory.total}`);
         }
-        return;
-      }
-      if (rtn.error) {
-        console.warn(`[worker error] hex=${rtn.hexId} category=${rtn.category} code=${rtn.error.code ?? 'n/a'} message=${rtn.error.message ?? 'unknown'}`);
-      }
-      //console.log(rtn);
-      sessionCrawler[rtn.hexId] ??= {};
-      sessionCrawler[rtn.hexId][rtn.category] ??= {};
-      sessionCrawler[rtn.hexId][rtn.category].terms ??= {};
-      if (!sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId]) {
-        //一つ上のTermIdを100%に更新。ラベルはPrefixLabelingなのでrtn.TermId.slice(0,-1)となる。
-        const prevTermId = rtn.TermId.slice(0, -1);
-        if (sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId] && !sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final) {
-          sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final = true;
-          sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].remaining = 0;
+        const downloadDir = workerOptions.providerOptions?.GimmeGimme;
+        if (downloadDir && uniqueFeatures.length) {
+          try {
+            await downloadFlickrImages(uniqueFeatures, downloadDir, { hexId: rtn.hexId, category: rtn.category });
+          } catch (err) {
+            console.error('[flickr downloads] failed:', err?.message || err);
+          }
         }
-      }
-      sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId] ??= {};
-      sessionCrawler[rtn.hexId][rtn.category].items ??= featureCollection([]);
-      sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
-
-      //定数を作って変数名が長くなるのを防ぐ
-      const currentHex = sessionCrawler[rtn.hexId];
-      const currentHexCategory = currentHex[rtn.category];
-      const idSet = currentHexCategory.ids;
-      //Setを使って重複除去
-      let duplicateCount = 0;
-      const uniqueFeatures = [];
-      for (const feature of rtn.photos.features) {
-        const featureId = feature?.properties?.id;
-        if (featureId != null && idSet.has(featureId)) {
-          duplicateCount++;
-          continue;
+        const uniqueFeatureCollection = featureCollection(uniqueFeatures);
+        sessionCrawler[rtn.hexId][rtn.category].items
+          = concatFC(sessionCrawler[rtn.hexId][rtn.category].items, uniqueFeatureCollection);
+        io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex });
+        if (!rtn.final) {
+          rtn.nextProviderOptions?.forEach((nextProviderOptions) => {
+            const workerOptionsClone = {
+              provider: workerOptions.provider,
+              hex: workerOptions.hex,
+              triangles: workerOptions.triangles,
+              bbox: workerOptions.bbox,
+              category: workerOptions.category,
+              tags: workerOptions.tags,
+              providerOptions: nextProviderOptions,
+              sessionId: workerOptions.sessionId
+            };
+            api.emit('splatone:start', workerOptionsClone);
+          });
+        } else if (
+          processing[currentSessionId] === 0 &&
+          isSessionFullyComplete(sessionCrawler, targets[currentSessionId])
+        ) {
+          api.emit('splatone:finish', workerOptions);
         }
-        if (featureId != null) {
-          idSet.add(featureId);
-        }
-        uniqueFeatures.push(feature);
-      }
-
-      //進捗更新。TermIdごとにfinal/remainingを管理。
-      currentHexCategory.terms[rtn.TermId].remaining = rtn.remaining;
-      currentHexCategory.terms[rtn.TermId].final = rtn.final;
-      if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
-        console.error("[ERROR] ALL DUPLICATE");
-      }
-      const hexCategoryRemaining = Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
-      currentHexCategory.remaining = hexCategoryRemaining;
-      currentHexCategory.total = hexCategoryRemaining + idSet.size;
-      currentHexCategory.crawled = idSet.size;
-
-      const hexRemaining =Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
-      const hexProgress ={
-        percent: currentHexCategory.total === 0 ? 1 : Math.min(1, currentHexCategory.crawled / Math.max(1, currentHexCategory.total)),
-        total: currentHexCategory.total,
-      }
-      if (argv.debugVerbose) {
-        console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicateCount}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${currentHexCategory.crawled} / ${currentHexCategory.total}`);
-      }
-      const uniqueFeatureCollection = featureCollection(uniqueFeatures);
-      sessionCrawler[rtn.hexId][rtn.category].items
-        = concatFC(sessionCrawler[rtn.hexId][rtn.category].items, uniqueFeatureCollection);
-      io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex });
-      if (!rtn.final) {
-        // 次回クロール用に更新
-        rtn.nextProviderOptions?.forEach((nextProviderOptions) => {
-          const workerOptionsClone = {
-            provider: workerOptions.provider,
-            hex: workerOptions.hex,
-            triangles: workerOptions.triangles,
-            bbox: workerOptions.bbox,
-            category: workerOptions.category,
-            tags: workerOptions.tags,
-            providerOptions: nextProviderOptions,
-            sessionId: workerOptions.sessionId
-          };
-          api.emit('splatone:start', workerOptionsClone);
-        });
-        //} else if (finish) {
-      } else if (processing[currentSessionId] == 0) {
-        if (argv.debugVerbose) {
-          console.table(progress);
-        }
-        api.emit('splatone:finish', workerOptions);
+      } catch (err) {
+        console.error('[splatone:start] handler failure:', err);
       }
       /*
       sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId].final = rtn.final;
