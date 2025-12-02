@@ -37,6 +37,7 @@ import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildProvidersOptions, 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const VIZ_BASE = resolve(__dirname, "visualizer");
+const PROVIDER_BASE = resolve(__dirname, "providers");
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
@@ -319,7 +320,7 @@ try {
   };
 
   const providers = await loadProviders({
-    dir: './providers',
+    dir: PROVIDER_BASE,
     api,
     optionsById: {},
   });
