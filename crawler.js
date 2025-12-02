@@ -474,6 +474,10 @@ try {
       group: 'UI Defaults',
       type: 'string',
       description: 'UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文字列'
+    }).option('city', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: '起動時に中心付近を合わせる都市名（例: "Tokyo"）'
     }).option('browse-mode', {
       group: 'Basic Options',
       type: 'boolean',
@@ -878,6 +882,7 @@ try {
         bbox: uiDefaults.bbox,
         polygon: uiDefaults.polygon,
       },
+      defaultCity: argv.city || null,
       selectedProvider: browseMode ? null : argv.provider,
       selectedVisualizers: browseMode ? [] : Object.keys(visualizers),
       cliBaseCommand: CLI_BASE_COMMAND,
@@ -1062,7 +1067,7 @@ try {
           //console.log("[cellSize?]",boundary,units);
           const { width, height } = bboxSize(boundary, units);
           //console.log("","w=",width,"/\th=",height);
-          cellSize = Math.max(0.5, width / (3 * 30), height / (30 * Math.sqrt(3)));
+          cellSize = Math.max(0.2, width / (3 * 30), height / (30 * Math.sqrt(3)));
           if (cellSize == 0) {
             cellSize = 1;
           }
