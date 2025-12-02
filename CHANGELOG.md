@@ -1,7 +1,31 @@
 # Splatone Change Log
 
 ## Versions
+### <a name='v0.0.18v0.0.22'></a>v0.0.18 → →　v0.0.22
 
+* **[可視化モジュール]** ```--vis-voronoi```追加
+  * ボロノイ図の生成
+* **[可視化モジュール]** ```--vis-pie-charts```追加
+  * Hex中心のカテゴリ割合Pie Chart描画
+* **[Bulky]** マーカークリックでFlickr写真ページを別タブで開くように改善
+* マイナーBug Fix
+
+### <a name='v0.0.17v0.0.18'></a>v0.0.17 →　v0.0.18
+
+* **[可視化モジュール]** ```--vis-heat```追加
+  * ヒートマップの生成
+
+### <a name='v0.0.13v0.0.17'></a>v0.0.13 → →　v0.0.17
+
+* **[可視化モジュール]** ```--vis-majority-hex```追加
+* 結果の色固定機能追加 (キーワード指定方法を参照の事)
+* [Bug Fix] npxが起動しない事象の修正
+
+### <a name='v0.0.12v0.0.13'></a>v0.0.12 →　v0.0.13
+
+* BulkyのPointMarkerのサイズや透明度を可変に
+  * コマンドライン引数で指定 (詳しくは```  npx -y -p splatone@latest crawler --help```)
+  
 ### v0.0.11 →　v0.0.12
 
 * Bottleneckを導入しクエリ間隔を適正値に調整 (3 queries/ 3 sec.)
@@ -16,7 +40,7 @@
   * taken: 写真の撮影日時を遡ってクローリング
 * extrasを指定可能に (```--p-flickr-Extras```)
     * https://www.flickr.com/services/api/explore/flickr.photos.search
-    * デフォルト値:　```date_upload,date_taken,owner_name,geo,url_s,tags```
+    * デフォルト値:　```date_upload,date_taken,owner_name,geo,url_sq,tags```
       * これらはコマンドライン引数での指定の有無に関わらず付与されます
 * 自動指定時のHexGridの最小サイズを0.5kmに
 * [Bug Fix] 時間軸並列機能のバグ修正
