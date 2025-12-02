@@ -4,6 +4,7 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
+    - [v0.0.28 → v0.0.29](#v0028--v0029)
     - [v0.0.23 → →　v0.0.28](#v0023--v0028)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
 - [使い方](#使い方)
@@ -75,6 +76,12 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## <a name='ChangeLog'></a>Change Log
 
+### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
+
+* ```--city```の追加
+  * ブラウザがデフォルトで表示する都市を指定できます
+  * 例: ```--city="Tokyo"```
+
 ### <a name='v0.0.23v0.0.28'></a>v0.0.23 → →　v0.0.28
 
 * Flickrプロバイダ
@@ -133,12 +140,13 @@ UI Defaults
                                                                         [文字列]
       --ui-polygon    UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文
                       字列                                              [文字列]
+      --city          起動時に中心付近を合わせる都市名（例: "Tokyo"）   [文字列]
 
 For flickr Provider
       --p-flickr-APIKEY      Flickr ServiceのAPI KEY                    [文字列]
       --p-flickr-Extras      カンマ区切り/保持する写真のメタデータ(デフォルト値
-                 は記載の有無に関わらず保持)
-       [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_sq,tags"]
+                             は記載の有無に関わらず保持)
+      [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_sq,tags"]
       --p-flickr-DateMode    利用時間軸(update=Flickr投稿日時/taken=写真撮影日時
                              )
                     [選択してください: "upload", "taken"] [デフォルト: "upload"]
@@ -146,7 +154,7 @@ For flickr Provider
       --p-flickr-GimmeGimme  Flickr画像を保存するディレクトリパス(指定しない場合
                              は保存しない)                              [文字列]
       --p-flickr-DateMax     クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1764650118]
+                                               [文字列] [デフォルト: 1764679068]
       --p-flickr-DateMin     クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
                                                [文字列] [デフォルト: 1072882800]
 
@@ -262,19 +270,29 @@ For voronoi Visualizer
 
 ## <a name='-1'></a>最小コマンド例
 
-1. *provider*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
-  * provider: flickr
-  * visualizer: bulky
-  * キーワード: canal,river|street,alley|bridge
-1. コマンドを実行するとWebブラウザで地図表示されるので、地図上の任意の位置に矩形あるいはポリゴンを描く
-  * 例えばベネチア
-2. Start Crawlingボタンをクリックしクローリング開始
-
-![](assets/screenshot_venice_simple.png?raw=true)
+- *provider*を一つ、*visualizer*を一つ以上指定し、複数のキーワードでクロールを開始します。
+  - provider: flickr
+  - visualizer: bulky
+  - キーワード: canal,river|street,alley|bridge
+- コマンドを実行するとWebブラウザで地図表示されるので、地図上の任意の位置に矩形あるいはポリゴンを描く
+  - 例えばベネチア
+- Start Crawlingボタンをクリックしクローリング開始
 
 ```bash
 $ npx -y -p splatone@latest crawler -p flickr -k "canal,river,sea|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
+
+![](assets/screenshot_venice_simple.png?raw=true)
+
+クローリングしたい都市があらかじめ決まっている時は、都市名で初期表示位置をざっくり指定できますコマンドライン引数、`--city` を追加します（内部で Nominatim によるジオコーディングを行います）。
+
+ではイタリアのナポリでPizza(🍕)とPiazza(広場)の比較をしてみましょう。
+
+```bash
+$ npx -y -p splatone@latest crawler -p flickr -k "pizza#FA0000=pizza|piazza#2B89EE=piazza" --vis-bulky --city "Napoli" --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+![](assets/screenshop_pizza_piazza.png?raw=true)
+
 
 ## <a name='-1'></a>ブラウズ専用モード
 
