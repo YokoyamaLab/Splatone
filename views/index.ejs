@@ -137,6 +137,7 @@
   <script type="module">
     const lat = <%= lat %>;
     const lon = <%= lon %>;
+    const defaultCity = <%- JSON.stringify(defaultCity || '') %>;
     const defaultGeometry = <%- JSON.stringify(defaultGeometry || {}) %>;
     const browseMode = <%- JSON.stringify(Boolean(browseMode)) %>;
     const cliContext = {
@@ -182,9 +183,16 @@
     }
 
     const storedView = readMapViewCookie();
-    const initialLat = Number.isFinite(Number(storedView?.lat)) ? Number(storedView.lat) : lat;
-    const initialLon = Number.isFinite(Number(storedView?.lon)) ? Number(storedView.lon) : lon;
-    const initialZoom = Number.isFinite(Number(storedView?.zoom)) ? Number(storedView.zoom) : 12;
+    const hasCityOverride = Boolean(defaultCity && String(defaultCity).trim());
+    const initialLat = hasCityOverride
+      ? lat
+      : (Number.isFinite(Number(storedView?.lat)) ? Number(storedView.lat) : lat);
+    const initialLon = hasCityOverride
+      ? lon
+      : (Number.isFinite(Number(storedView?.lon)) ? Number(storedView.lon) : lon);
+    const initialZoom = hasCityOverride
+      ? 12
+      : (Number.isFinite(Number(storedView?.zoom)) ? Number(storedView.zoom) : 12);
 
     function setProgress(el, value) {
       //プログレスバー
@@ -755,6 +763,27 @@
       preferCanvas: true,
       zoomControl: true
     }).setView([initialLat, initialLon], initialZoom);
+
+    // 都市名指定がある場合は保存ビューより優先してクライアント側でジオコーディングして中心を調整
+    if (hasCityOverride) {
+      const query = encodeURIComponent(defaultCity);
+      // Nominatim (OpenStreetMap) の簡易ジオコーディングAPIを利用
+      fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`)
+        .then((res) => res.ok ? res.json() : null)
+        .then((results) => {
+          if (!Array.isArray(results) || results.length === 0) return;
+          const hit = results[0];
+          const latNum = Number(hit.lat);
+          const lonNum = Number(hit.lon);
+          if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return;
+          console.log(`ジオコーディング結果: ${defaultCity} → (${latNum}, ${lonNum})`);
+          map.setView([latNum, lonNum], 14);
+        })
+        .catch(() => {
+          console.warn('ジオコーディングに失敗しました');
+          // ジオコーディング失敗時はデフォルト中心のまま
+        });
+    }
 
     const persistMapView = debounce(() => {
       const center = map.getCenter();

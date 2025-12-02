@@ -37,6 +37,9 @@ import { dfsObject, bboxSize, saveGeoJsonObjectAsStream, buildProvidersOptions, 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const VIZ_BASE = resolve(__dirname, "visualizer");
+const PROVIDER_BASE = resolve(__dirname, "providers");
+const VIEWS_BASE = resolve(__dirname, "views");
+const PUBLIC_BASE = resolve(__dirname, "public");
 const app = express();
 const port = 3000;
 const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
@@ -319,7 +322,7 @@ try {
   };
 
   const providers = await loadProviders({
-    dir: './providers',
+    dir: PROVIDER_BASE,
     api,
     optionsById: {},
   });
@@ -471,6 +474,10 @@ try {
       group: 'UI Defaults',
       type: 'string',
       description: 'UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文字列'
+    }).option('city', {
+      group: 'UI Defaults',
+      type: 'string',
+      description: '起動時に中心付近を合わせる都市名（例: "Tokyo"）'
     }).option('browse-mode', {
       group: 'Basic Options',
       type: 'boolean',
@@ -575,9 +582,9 @@ try {
   const DEFAULT_CENTER = { lat: 48.873611, lon: 2.294444 };
 
   app.use(express.json({ limit: '50mb' }));
-  app.use(express.static('public'));
+  app.use(express.static(PUBLIC_BASE));
   app.set('view engine', 'ejs');
-  app.set('views', './views');
+  app.set('views', VIEWS_BASE);
 
   const server = http.createServer(app);
   const io = new IOServer(server, {
@@ -875,6 +882,7 @@ try {
         bbox: uiDefaults.bbox,
         polygon: uiDefaults.polygon,
       },
+      defaultCity: argv.city || null,
       selectedProvider: browseMode ? null : argv.provider,
       selectedVisualizers: browseMode ? [] : Object.keys(visualizers),
       cliBaseCommand: CLI_BASE_COMMAND,
@@ -1059,7 +1067,7 @@ try {
           //console.log("[cellSize?]",boundary,units);
           const { width, height } = bboxSize(boundary, units);
           //console.log("","w=",width,"/\th=",height);
-          cellSize = Math.max(0.5, width / (3 * 30), height / (30 * Math.sqrt(3)));
+          cellSize = Math.max(0.2, width / (3 * 30), height / (30 * Math.sqrt(3)));
           if (cellSize == 0) {
             cellSize = 1;
           }
