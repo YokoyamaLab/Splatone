@@ -25,11 +25,11 @@ coverage
 
 # Project-specific: do not publish assets used only for development
 assets
+examples
+publications
 
 # Misc
 *.zip
-
 *.tex
 *.pdf
 
-examples
