@@ -4,6 +4,7 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
+    - [v0.0.29 → → v0.0.32](#v0029---v0032)
     - [v0.0.28 → v0.0.29](#v0028--v0029)
     - [v0.0.23 → →　v0.0.28](#v0023--v0028)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
@@ -77,6 +78,11 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 
 ## <a name='ChangeLog'></a>Change Log
+
+### <a name='v0.0.29v0.0.32'></a>v0.0.29 → → v0.0.32
+
+* BrowseモードにURL読み込み機能(デモモード)追加
+  * GitHub上に東京タワーとスカイツリーを例としてすべての可視化結果を掲載
 
 ### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
 
