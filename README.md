@@ -4,6 +4,7 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
+    - [v0.0.29 → → v0.0.32](#v0029---v0032)
     - [v0.0.28 → v0.0.29](#v0028--v0029)
     - [v0.0.23 → →　v0.0.28](#v0023--v0028)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
@@ -11,6 +12,8 @@
   - [Helpの表示](#helpの表示)
   - [最小コマンド例](#最小コマンド例)
   - [ブラウズ専用モード](#ブラウズ専用モード)
+    - [インタラクティブモード](#インタラクティブモード)
+    - [デモモード](#デモモード)
 - [詳細説明](#詳細説明)
   - [Provider (クローラー)](#provider-クローラー)
     - [Flickr: Flickrのジオタグ付き写真を取得するクローラー](#flickr-flickrのジオタグ付き写真を取得するクローラー)
@@ -75,6 +78,11 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 
 ## <a name='ChangeLog'></a>Change Log
+
+### <a name='v0.0.29v0.0.32'></a>v0.0.29 → → v0.0.32
+
+* BrowseモードにURL読み込み機能(デモモード)追加
+  * GitHub上に東京タワーとスカイツリーを例としてすべての可視化結果を掲載
 
 ### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
 
@@ -296,7 +304,9 @@ $ npx -y -p splatone@latest crawler -p flickr -k "pizza#FA0000=pizza|piazza#2B89
 
 ## <a name='-1'></a>ブラウズ専用モード
 
-ダウンロードした結果ファイルをブラウザ上で閲覧するためのモードです。
+### インタラクティブモード
+
+ダウンロードした結果ファイルをブラウザ上にドラック＆ドロップする事で、再クローリング無しにクローリング結果を閲覧するためのモードです。
 
 ```bash
 npx -y -p splatone@latest browse
@@ -311,8 +321,14 @@ npx -y -p splatone@latest crawl --browse-mode
 - ブラウザ上に result*.json（`crawler` が保存したファイル）をドラッグ＆ドロップすると、その場で結果が地図へ描画されます。ズームやパン等Leafletの機能が使えます。
 - CLI コマンド生成欄には、この結果を生成したコマンドが表示さるため、同じ条件をベースに新たなクエリを発行できます。
  
+### デモモード
 
+結果ファイルをコマンドライン引数としてURLで指定するモードです。Splatoneはいくつかのサンプル結果ファイルがGitHub上にあるので、それを画面上に表示する事ができます。もちろん、URLで指定できるところに結果JSONファイルがあれば、任意の結果を読み込むことができます。
 
+```shell
+npx -y -p splatone@latest browse \
+--browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-bulky.json"
+```
 
 # 詳細説明
 
