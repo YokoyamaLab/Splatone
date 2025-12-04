@@ -25,10 +25,11 @@ coverage
 
 # Project-specific: do not publish assets used only for development
 assets
-latexmkrc
 
 # Misc
 *.zip
 
 *.tex
 *.pdf
+
+examples

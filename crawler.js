@@ -483,6 +483,10 @@ try {
       type: 'boolean',
       default: false,
       description: 'ブラウズ専用モード（範囲描画とクロールを無効化）'
+    }).option('browse-load-url', {
+      group: 'Basic Options',
+      type: 'string',
+      description: 'browseモード起動時に指定URLからエクスポート結果を読み込む'
     })
     .version()
     .coerce({
@@ -540,12 +544,28 @@ try {
       if (selectedVisualizers.length > 0 && argv.debugVerbose) {
         console.warn('[browse-mode] --vis-* オプションは無視されます。');
       }
+      if (argv['browse-load-url']) {
+        try {
+          const parsedUrl = new URL(argv['browse-load-url']);
+          if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            throw new Error('--browse-load-url は http もしくは https URL を指定してください');
+          }
+        } catch (err) {
+          throw new Error(`--browse-load-url が不正です: ${err?.message || err}`);
+        }
+      }
+    }
+    if (!isBrowseMode && argv['browse-load-url']) {
+      throw new Error('--browse-load-url は browse-mode と併用してください');
     }
     return true;
   });
 
   const argv = await yargv.parseAsync();
   const browseMode = Boolean(argv['browse-mode']);
+  const browseLoadUrl = browseMode && typeof argv['browse-load-url'] === 'string' && argv['browse-load-url'].trim()
+    ? argv['browse-load-url'].trim()
+    : null;
 
   let uiDefaults;
   try {
@@ -577,6 +597,13 @@ try {
   const crawlers = {};
   const targets = {};
   const rawSnapshotRegistry = new Map();
+  const browseAutoLoadMeta = {
+    requestedUrl: browseLoadUrl,
+    label: null,
+    error: null
+  };
+  let browseAutoLoadBundle = null;
+  let browseAutoLoadErrors = null;
 
   // 初期中心（凱旋門）
   const DEFAULT_CENTER = { lat: 48.873611, lon: 2.294444 };
@@ -848,6 +875,170 @@ try {
     return `${prefix}-${stamp}-${rand}`;
   }
 
+  function deriveFileNameFromUrl(urlString) {
+    if (!urlString) {
+      return null;
+    }
+    try {
+      const parsed = new URL(urlString);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (!segments.length) {
+        return null;
+      }
+      return decodeURIComponent(segments[segments.length - 1]);
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeVisualizerSelection(normalizedPayload, requestedVisualizers) {
+    const fallbackVisualizers = normalizedPayload?.visualizers?.length
+      ? normalizedPayload.visualizers
+      : Object.keys(all_visualizers);
+    const candidateVisualizers = Array.isArray(requestedVisualizers) && requestedVisualizers.length
+      ? requestedVisualizers
+      : fallbackVisualizers;
+    return [...new Set(candidateVisualizers.filter((v) => typeof v === 'string'))]
+      .filter((name) => Object.prototype.hasOwnProperty.call(all_visualizers, name));
+  }
+
+  function buildBundleFromNormalizedPayload(normalizedPayload, requestedVisualizers, overrideVisOptions = {}, descriptor = {}) {
+    if (!normalizedPayload) {
+      throw new Error('normalized payload is required');
+    }
+    const visualizerNames = normalizeVisualizerSelection(normalizedPayload, requestedVisualizers);
+    if (visualizerNames.length === 0) {
+      throw new Error('no valid visualizers were requested');
+    }
+
+    const defaultVisOptions = buildVisualizerDefaultOptions(visualizerNames);
+    const baseVisOptions = mergeVisOptionsSnapshot(defaultVisOptions, normalizedPayload.visOptions ?? {});
+    const mergedVisOptions = mergeVisOptionsSnapshot(baseVisOptions, overrideVisOptions ?? {});
+    const geoJsonOutput = {};
+    const errors = {};
+
+    for (const visName of visualizerNames) {
+      const instance = visualizers_[visName];
+      if (!instance || typeof instance.getFutureCollection !== 'function') {
+        errors[visName] = `visualizer "${visName}" is not available`;
+        continue;
+      }
+      try {
+        const crawlerClone = cloneJsonSafe(normalizedPayload.crawler);
+        const targetClone = cloneTargetForVisualizer(normalizedPayload);
+        const options = mergedVisOptions[visName] ?? {};
+        geoJsonOutput[visName] = instance.getFutureCollection(crawlerClone, targetClone, options);
+      } catch (err) {
+        console.error(`[visualize] ${visName} failed:`, err);
+        errors[visName] = err?.message || String(err);
+      }
+    }
+
+    if (Object.keys(geoJsonOutput).length === 0) {
+      const error = new Error('visualization failed');
+      error.details = errors;
+      throw error;
+    }
+
+    const responseBundle = {
+      version: normalizedPayload.version ?? 1,
+      resultId: generateResultId('raw'),
+      provider: normalizedPayload.provider ?? null,
+      visualizers: Object.keys(geoJsonOutput),
+      visOptions: mergedVisOptions,
+      palette: normalizedPayload.palette ?? {},
+      context: normalizedPayload.context ?? null,
+      geoJson: geoJsonOutput,
+      raw: {
+        type: descriptor?.type ?? null,
+        sessionId: normalizedPayload.sessionId ?? descriptor?.sessionId ?? null,
+        fileName: descriptor?.fileName ?? null,
+        filePath: descriptor?.filePath ?? null
+      }
+    };
+
+    if (descriptor?.sourceUrl) {
+      responseBundle.raw.sourceUrl = descriptor.sourceUrl;
+    }
+
+    const payload = { bundle: responseBundle };
+    if (Object.keys(errors).length > 0) {
+      payload.errors = errors;
+    }
+    return payload;
+  }
+
+  async function prepareBrowseAutoLoadBundle() {
+    if (!browseMode || !browseLoadUrl) {
+      browseAutoLoadBundle = null;
+      browseAutoLoadErrors = null;
+      browseAutoLoadMeta.error = null;
+      browseAutoLoadMeta.label = null;
+      return;
+    }
+    try {
+      const response = await fetch(browseLoadUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      const bodyText = await response.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(bodyText);
+      } catch (err) {
+        throw new Error(`JSONパースに失敗しました: ${err?.message || err}`);
+      }
+
+      if (parsed && typeof parsed === 'object' && parsed.crawler && parsed.target) {
+        const normalizedPayload = normalizeRawPayloadShape(parsed);
+        if (!normalizedPayload.sessionId) {
+          normalizedPayload.sessionId = generateResultId('rawsess');
+        }
+        rawSnapshotRegistry.set(normalizedPayload.sessionId, {
+          payload: normalizedPayload,
+          fileInfo: null
+        });
+        const descriptor = {
+          type: 'url',
+          sessionId: normalizedPayload.sessionId,
+          fileName: deriveFileNameFromUrl(browseLoadUrl) || `remote-${normalizedPayload.sessionId}.json`,
+          filePath: null,
+          sourceUrl: browseLoadUrl
+        };
+        const { bundle, errors } = buildBundleFromNormalizedPayload(normalizedPayload, null, null, descriptor);
+        browseAutoLoadBundle = cloneJsonSafe(bundle);
+        browseAutoLoadErrors = errors ?? null;
+        browseAutoLoadMeta.label = descriptor.fileName;
+        browseAutoLoadMeta.error = null;
+        return;
+      }
+
+      const bundleCandidate = parsed?.bundle ?? parsed;
+      if (!bundleCandidate || typeof bundleCandidate !== 'object' || !bundleCandidate.geoJson) {
+        throw new Error('ダウンロードしたデータが結果バンドルでもrawデータでもありません');
+      }
+      if (!bundleCandidate.raw) {
+        bundleCandidate.raw = {};
+      }
+      bundleCandidate.raw.type ??= 'url';
+      bundleCandidate.raw.sourceUrl ??= browseLoadUrl;
+      bundleCandidate.raw.fileName ??= deriveFileNameFromUrl(browseLoadUrl) || 'remote-bundle.json';
+      browseAutoLoadBundle = cloneJsonSafe(bundleCandidate);
+      browseAutoLoadErrors = parsed?.errors ?? null;
+      browseAutoLoadMeta.label = bundleCandidate.raw.fileName;
+      browseAutoLoadMeta.error = null;
+    } catch (err) {
+      browseAutoLoadBundle = null;
+      browseAutoLoadErrors = null;
+      browseAutoLoadMeta.error = err?.message || String(err);
+      console.error('[browse:auto-load] failed to prepare bundle:', err);
+    }
+  }
+
+  if (browseMode) {
+    await prepareBrowseAutoLoadBundle();
+  }
+
 
   /**
    * /api/hexgrid
@@ -887,7 +1078,13 @@ try {
       selectedVisualizers: browseMode ? [] : Object.keys(visualizers),
       cliBaseCommand: CLI_BASE_COMMAND,
       browseMode,
-      clientVisualizers: browseMode ? Object.keys(all_visualizers) : Object.keys(visualizers)
+      clientVisualizers: browseMode ? Object.keys(all_visualizers) : Object.keys(visualizers),
+      browseAutoLoad: {
+        hasBundle: Boolean(browseAutoLoadBundle),
+        label: browseAutoLoadMeta.label,
+        error: browseAutoLoadMeta.error,
+        requestedUrl: browseAutoLoadMeta.requestedUrl
+      }
     });
   });
 
@@ -925,67 +1122,40 @@ try {
         });
         source.descriptor.sessionId = normalizedPayload.sessionId;
       }
-      const fallbackVisualizers = normalizedPayload.visualizers?.length
-        ? normalizedPayload.visualizers
-        : Object.keys(all_visualizers);
-      const candidateVisualizers = Array.isArray(requestedVisualizers) && requestedVisualizers.length
-        ? requestedVisualizers
-        : fallbackVisualizers;
-      const uniqueVisualizerNames = [...new Set(candidateVisualizers.filter((v) => typeof v === 'string'))]
-        .filter((name) => Object.prototype.hasOwnProperty.call(all_visualizers, name));
-      if (uniqueVisualizerNames.length === 0) {
-        return res.status(400).json({ error: 'no valid visualizers were requested' });
+      let result;
+      try {
+        result = buildBundleFromNormalizedPayload(normalizedPayload, requestedVisualizers, overrideVisOptions, source.descriptor);
+      } catch (err) {
+        if (err.message === 'no valid visualizers were requested') {
+          return res.status(400).json({ error: err.message });
+        }
+        if (err.message === 'visualization failed') {
+          return res.status(500).json({ error: err.message, details: err.details });
+        }
+        throw err;
       }
 
-      const defaultVisOptions = buildVisualizerDefaultOptions(uniqueVisualizerNames);
-      const baseVisOptions = mergeVisOptionsSnapshot(defaultVisOptions, normalizedPayload.visOptions ?? {});
-      const mergedVisOptions = mergeVisOptionsSnapshot(baseVisOptions, overrideVisOptions ?? {});
-      const geoJsonOutput = {};
-      const errors = {};
-
-      for (const visName of uniqueVisualizerNames) {
-        const instance = visualizers_[visName];
-        if (!instance || typeof instance.getFutureCollection !== 'function') {
-          errors[visName] = `visualizer "${visName}" is not available`;
-          continue;
-        }
-        try {
-          const crawlerClone = cloneJsonSafe(normalizedPayload.crawler);
-          const targetClone = cloneTargetForVisualizer(normalizedPayload);
-          const options = mergedVisOptions[visName] ?? {};
-          geoJsonOutput[visName] = instance.getFutureCollection(crawlerClone, targetClone, options);
-        } catch (err) {
-          console.error(`[api:revisualize] ${visName} failed:`, err);
-          errors[visName] = err?.message || String(err);
-        }
-      }
-
-      if (Object.keys(geoJsonOutput).length === 0) {
-        return res.status(500).json({ error: 'visualization failed', details: errors });
-      }
-
-      const responseBundle = {
-        version: normalizedPayload.version ?? 1,
-        resultId: generateResultId('raw'),
-        provider: normalizedPayload.provider ?? null,
-        visualizers: Object.keys(geoJsonOutput),
-        visOptions: mergedVisOptions,
-        palette: normalizedPayload.palette ?? {},
-        context: normalizedPayload.context ?? null,
-        geoJson: geoJsonOutput,
-        raw: {
-          type: source.descriptor?.type ?? null,
-          sessionId: normalizedPayload.sessionId ?? source.descriptor?.sessionId ?? null,
-          fileName: source.descriptor?.fileName ?? null,
-          filePath: source.descriptor?.filePath ?? null
-        }
-      };
-
-      return res.json({ ok: true, bundle: responseBundle, errors: Object.keys(errors).length ? errors : undefined });
+      return res.json({ ok: true, bundle: result.bundle, errors: result.errors });
     } catch (err) {
       console.error('[api:revisualize] failed:', err);
       return res.status(500).json({ error: err?.message || 'failed to re-run visualizer' });
     }
+  });
+
+  app.get('/api/browse/auto-load', (_req, res) => {
+    if (!browseMode) {
+      return res.status(404).json({ ok: false, error: 'auto-load is disabled' });
+    }
+    if (!browseAutoLoadBundle) {
+      const message = browseAutoLoadMeta.error || 'auto-load bundle is not available';
+      return res.status(404).json({ ok: false, error: message });
+    }
+    return res.json({
+      ok: true,
+      bundle: cloneJsonSafe(browseAutoLoadBundle),
+      label: browseAutoLoadMeta.label ?? null,
+      errors: browseAutoLoadErrors ?? undefined
+    });
   });
 
 

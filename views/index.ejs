@@ -140,6 +140,7 @@
     const defaultCity = <%- JSON.stringify(defaultCity || '') %>;
     const defaultGeometry = <%- JSON.stringify(defaultGeometry || {}) %>;
     const browseMode = <%- JSON.stringify(Boolean(browseMode)) %>;
+    const browseAutoLoad = <%- JSON.stringify(browseAutoLoad || {}) %>;
     const cliContext = {
       baseCommand: <%- JSON.stringify(cliBaseCommand || '') %>,
       provider: <%- JSON.stringify(selectedProvider || '') %>,
@@ -1164,6 +1165,7 @@
 
     if (browseMode) {
       initDropImport();
+      autoLoadInitialBundle();
     }
 
     function initDropImport() {
@@ -1210,6 +1212,61 @@
           await importResultFile(file);
         }
       });
+    }
+
+    async function autoLoadInitialBundle() {
+      if (!browseMode || !browseAutoLoad) {
+        return;
+      }
+      if (!browseAutoLoad.requestedUrl) {
+        return;
+      }
+      if (!browseAutoLoad.hasBundle) {
+        if (browseAutoLoad.error) {
+          Toastify({
+            text: `URLの自動読み込みに失敗しました: ${browseAutoLoad.error}`,
+            duration: 5000,
+            gravity: 'bottom',
+            position: 'center',
+            className: 'toast-error'
+          }).showToast();
+        }
+        return;
+      }
+      try {
+        const response = await fetch('/api/browse/auto-load');
+        const payload = await response.json();
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error || `HTTP ${response.status}`);
+        }
+        await visualizeBundle(payload.bundle, { sourceLabel: payload.label || browseAutoLoad.label || 'URL import' });
+        if (payload.errors && Object.keys(payload.errors).length) {
+          Toastify({
+            text: '一部ビジュアライザーでエラーが発生しました。詳細はコンソールを確認してください。',
+            duration: 4000,
+            gravity: 'bottom',
+            position: 'center',
+            className: 'toast-warning'
+          }).showToast();
+          console.warn('[auto-load] visualize errors:', payload.errors);
+        } else {
+          Toastify({
+            text: `${payload.label || browseAutoLoad.label || 'URL'} から結果を読み込みました`,
+            duration: 3000,
+            gravity: 'bottom',
+            position: 'center',
+            className: 'toast-success'
+          }).showToast();
+        }
+      } catch (err) {
+        Toastify({
+          text: `URLの自動読み込みに失敗しました: ${err?.message || err}`,
+          duration: 5000,
+          gravity: 'bottom',
+          position: 'center',
+          className: 'toast-error'
+        }).showToast();
+      }
     }
 
     document.getElementById('applyVisOptions')?.addEventListener('click', () => {
