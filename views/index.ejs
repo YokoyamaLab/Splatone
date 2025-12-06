@@ -480,15 +480,21 @@
     });
     socket.on('progress', (res) => {
       //res.currentHexはカテゴリごとのcrawled/totalを保持している
-      const { crawled, total } = Object.values(res.currentHex ?? {}).reduce(
-        (acc, cat) => (cat == null ? acc : {
-          crawled: acc.crawled + (cat.crawled ?? 0),
-          total: acc.total + (cat.total ?? 0)
-        }),
-        { crawled: 0, total: 0 }
+      const { crawled, expected } = Object.values(res.currentHex ?? {}).reduce(
+        (acc, cat) => {
+          if (!cat) return acc;
+          const catCrawled = cat.crawled ?? 0;
+          const catProgress = Number.isFinite(cat.progressCompleted) ? cat.progressCompleted : catCrawled;
+          const catExpected = Number.isFinite(cat.progressExpected) ? cat.progressExpected : (cat.total ?? catProgress);
+          return {
+            crawled: acc.crawled + catProgress,
+            expected: acc.expected + Math.max(catExpected, catProgress)
+          };
+        },
+        { crawled: 0, expected: 0 }
       );
-      const safeTotal = Math.max(1, total);
-      const normalized = total === 0 ? 1 : Math.min(1, crawled / safeTotal);
+      const safeTotal = Math.max(1, expected);
+      const normalized = expected === 0 ? 1 : Math.min(1, crawled / safeTotal);
       hexProgress[res.hexId] = {
         crawled,
         total: safeTotal,
@@ -506,8 +512,8 @@
       const overallNormalized = aggregated.total === 0 ? 1 : Math.min(1, aggregated.crawled / aggSafeTotal);
       const percent = Math.round(overallNormalized * 100000) / 1000;
       setProgress(document.getElementById("progressCrawl"), percent);
-      //ここでHexのプログレスグラデーションレイヤのOpacity調整
-      highlightHexById(res.hexId, 1 - normalized, "#263238");
+      // Hexのプログレスグラデーションレイヤを進捗率で彩色
+      renderHexProgress(res.hexId, normalized);
     });
 
     function isPlainObject(a) {
@@ -885,6 +891,13 @@
         });
         if (layer.bringToFront) layer.bringToFront();
       }
+    }
+
+    function renderHexProgress(hexId, normalized) {
+      const clamped = Math.max(0, Math.min(1, Number(normalized) || 0));
+      const fillOpacity = 0.85 * (1 - clamped);
+      const fillColor = '#000000';
+      highlightHexById(hexId, fillOpacity, fillColor);
     }
 
     function clearTriHighlight() {

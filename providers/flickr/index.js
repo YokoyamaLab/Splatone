@@ -2,9 +2,13 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
+import Bottleneck from 'bottleneck';
 import { ProviderBase } from '../../lib/ProviderBase.js';
 import { bbox, polygon, centroid, booleanPointInPolygon, featureCollection } from '@turf/turf';
 import { loadAPIKey } from '#lib/splatone';
+
+const DEFAULT_THROTTLE_MAX_CONCURRENT = 2;
+const DEFAULT_THROTTLE_MIN_TIME_MS = 500;
 export default class FlickrProvider extends ProviderBase {
 
     static name = 'Flickr Provider';       // 任意
@@ -13,6 +17,8 @@ export default class FlickrProvider extends ProviderBase {
     constructor(api, options = {}) {
         super(api, options);
         this.id = path.basename(path.dirname(fileURLToPath(import.meta.url)));//必須(ディレクトリ名がプロバイダ名) 
+        this._throttleLimiter = null;
+        this._throttleKey = null;
     }
     async yargv(yargv) {
         // 必須項目にすると、このプラグインを使用しない時も必須になります。
@@ -103,6 +109,16 @@ export default class FlickrProvider extends ProviderBase {
                 return Math.floor(num);  // 確実に整数に
             }
             throw new Error(`Invalid date/time format: ${opt} (YYYY-MM-DD または UNIX時間(秒)で指定してください)`)
+        }).option(this.argKey('ThrottleMaxConcurrent'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'number',
+            default: DEFAULT_THROTTLE_MAX_CONCURRENT,
+            description: 'Flickr API リクエストの同時実行数'
+        }).option(this.argKey('ThrottleMinTimeMs'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'number',
+            default: DEFAULT_THROTTLE_MIN_TIME_MS,
+            description: '連続リクエスト間の最小待機時間 (ミリ秒)'
         });
     }
 
@@ -120,7 +136,26 @@ export default class FlickrProvider extends ProviderBase {
             await mkdir(resolved, { recursive: true });
             options['GimmeGimme'] = resolved;
         }
+        const throttleMaxConcRaw = Number(options['ThrottleMaxConcurrent'] ?? DEFAULT_THROTTLE_MAX_CONCURRENT);
+        const throttleMinTimeRaw = Number(options['ThrottleMinTimeMs'] ?? DEFAULT_THROTTLE_MIN_TIME_MS);
+        options['ThrottleMaxConcurrent'] = Number.isFinite(throttleMaxConcRaw) && throttleMaxConcRaw > 0
+            ? Math.floor(throttleMaxConcRaw)
+            : DEFAULT_THROTTLE_MAX_CONCURRENT;
+        options['ThrottleMinTimeMs'] = Number.isFinite(throttleMinTimeRaw) && throttleMinTimeRaw >= 0
+            ? Math.floor(throttleMinTimeRaw)
+            : DEFAULT_THROTTLE_MIN_TIME_MS;
         return options;
+    }
+
+    getThrottleLimiter({ ThrottleMaxConcurrent, ThrottleMinTimeMs } = {}) {
+        const maxConcurrent = Math.max(1, Math.floor(ThrottleMaxConcurrent ?? DEFAULT_THROTTLE_MAX_CONCURRENT));
+        const minTime = Math.max(0, Math.floor(ThrottleMinTimeMs ?? DEFAULT_THROTTLE_MIN_TIME_MS));
+        const key = `${maxConcurrent}:${minTime}`;
+        if (!this._throttleLimiter || this._throttleKey !== key) {
+            this._throttleLimiter = new Bottleneck({ maxConcurrent, minTime });
+            this._throttleKey = key;
+        }
+        return this._throttleLimiter;
     }
 
     async stop() {
@@ -142,6 +177,15 @@ export default class FlickrProvider extends ProviderBase {
             return featureCollection(selected);
         }
         const hexQuery = {};
+        const throttleMaxConcurrent = providerOptions?.ThrottleMaxConcurrent ?? this.options?.ThrottleMaxConcurrent ?? DEFAULT_THROTTLE_MAX_CONCURRENT;
+        const throttleMinTimeMs = providerOptions?.ThrottleMinTimeMs ?? this.options?.ThrottleMinTimeMs ?? DEFAULT_THROTTLE_MIN_TIME_MS;
+        const limiter = this.getThrottleLimiter({ ThrottleMaxConcurrent: throttleMaxConcurrent, ThrottleMinTimeMs: throttleMinTimeMs });
+        const resolvedProviderOptions = {
+            ...(this.options || {}),
+            ...(providerOptions || {}),
+            ThrottleMaxConcurrent: throttleMaxConcurrent,
+            ThrottleMinTimeMs: throttleMinTimeMs
+        };
         const ks = Object.keys(hexGrid.features);
         ks.map(k => {
             const item = hexGrid.features[k];
@@ -151,15 +195,18 @@ export default class FlickrProvider extends ProviderBase {
                 const tags = categories[ck];
                 //console.log("tag=",ck,"/",tags);
                 hexQuery[item.properties.hexId][ck] = { photos: [], tags, final: false };
-                this.api.emit('splatone:start', { //WorkerOptions
-                    provider: this.id,
-                    hex: item,
-                    triangles: getTrianglesInHex(item, triangles),
-                    bbox: bbox(item.geometry),
-                    category: ck,
-                    tags,
-                    providerOptions,
-                    sessionId
+                limiter.schedule(() => {
+                    this.api.emit('splatone:start', { //WorkerOptions
+                        provider: this.id,
+                        hex: item,
+                        triangles: getTrianglesInHex(item, triangles),
+                        bbox: bbox(item.geometry),
+                        category: ck,
+                        tags,
+                        providerOptions: resolvedProviderOptions,
+                        sessionId
+                    });
+                    return null;
                 });
             });
         });

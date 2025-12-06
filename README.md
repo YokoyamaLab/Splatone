@@ -4,12 +4,12 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
+    - [v0.0.22 → v0.0.33](#v0022--v0033)
     - [v0.0.29 → → v0.0.32](#v0029---v0032)
     - [v0.0.28 → v0.0.29](#v0028--v0029)
     - [v0.0.23 → →　v0.0.28](#v0023--v0028)
     - [v0.0.22 → →　v0.0.23](#v0022--v0023)
 - [使い方](#使い方)
-  - [Helpの表示](#helpの表示)
   - [最小コマンド例](#最小コマンド例)
   - [ブラウズ専用モード](#ブラウズ専用モード)
     - [インタラクティブモード](#インタラクティブモード)
@@ -20,6 +20,8 @@
       - [コマンドライン引数](#コマンドライン引数)
       - [GimmeGimmeモードで取得する写真とそのファイル名について](#gimmegimmeモードで取得する写真とそのファイル名について)
       - [Flickr APIキーの与え方](#flickr-apiキーの与え方)
+    - [gmap: Google Places Text Searchを取得するクローラー](#gmap-google-places-text-searchを取得するクローラー)
+    - [overpass: OpenStreetMapの地点を取得するクローラー](#overpass-openstreetmapの地点を取得するクローラー)
   - [Visualizer (可視化モジュール)](#visualizer-可視化モジュール)
     - [Bulky: 全ての点を地図上にポイントする](#bulky-全ての点を地図上にポイントする)
       - [コマンド例](#コマンド例)
@@ -61,9 +63,11 @@
 
 ## <a name=''></a>概要
 
-SNSのジオタグ付きポストをキーワードに基づいて収集するツールです。キーワードは複数指定し、それぞれのキーワードの出現分布を地図上にマップします。現在は以下のSNSに対応しています。
+SNSのジオタグ付きポストをキーワードに基づいて収集するツールです。キーワードは複数指定し、それぞれのキーワードの出現分布を地図上にマップします。現在は以下のソースに対応しています。
 
-- Flickr
+- Flickr (provider名: flickr)
+- Google Places Text Search (provider名: gmap)
+- Overpass API / OpenStreetMap (provider名: overpass)
 
 集めたデータはキーワード毎に色分けされ地図上で可視化されます。以下の可視化手法に対応しています。
 
@@ -79,10 +83,17 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## <a name='ChangeLog'></a>Change Log
 
+### <a name='v0.0.29v0.0.32'></a>v0.0.22 → v0.0.33
+
+* Google Maps Place APIからvenueをクローリングするProviderを実装: ```-p gmap```
+* OpenStreetMap Overpass APIからvenueをクローリングするProviderを実装: ```-p overpass```
+
 ### <a name='v0.0.29v0.0.32'></a>v0.0.29 → → v0.0.32
 
 * BrowseモードにURL読み込み機能(デモモード)追加
   * GitHub上に東京タワーとスカイツリーを例としてすべての可視化結果を掲載
+* gmapプロバイダ追加: Google Places Text Search APIから地点を取得
+* overpassプロバイダ追加: Overpass APIからOpenStreetMapのPOIを取得
 
 ### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
 
@@ -117,164 +128,6 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - [Node.js](https://nodejs.org/ja/download)をインストール後、npxで実行します。
   - npxはnpm上のモジュールをコマンド一つでインストールと実行を行う事ができるコマンドです。
 
-## <a name='Help'></a>Helpの表示
-
-```shell
-$ npx -y -p splatone@latest crawler --help
-[app] [provider] loaded: flickr@1.0.0
-使い方: crawler.js [options]
-
-Basic Options
-  -p, --provider     実行するプロバイダ    [文字列] [選択してください: "flickr"]
-  -k, --keywords     検索キーワード(|区切り)               [文字列] [デフォルト:
-                       "nature,tree,flower|building,house|water,sea,river,pond"]
-  -f, --filed        大きなデータをファイルとして送受信する
-                                                       [真偽] [デフォルト: true]
-  -c, --chopped      大きなデータを細分化して送受信する
-                                             [非推奨] [真偽] [デフォルト: false]
-      --browse-mode  ブラウズ専用モード（範囲描画とクロールを無効化）
-                                                      [真偽] [デフォルト: false]
-
-Debug
-      --debug-verbose  デバッグ情報出力               [真偽] [デフォルト: false]
-
-UI Defaults
-      --ui-cell-size  起動時にUIへ設定するセルサイズ (0で自動)
-                                                          [数値] [デフォルト: 0]
-      --ui-units      セルサイズの単位 (kilometers/meters/miles)
-       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
-                                                                   "kilometers"]
-      --ui-bbox       UI初期表示の矩形範囲。"minLon,minLat,maxLon,maxLat" の形式
-                                                                        [文字列]
-      --ui-polygon    UI初期表示のポリゴン。Polygon/MultiPolygonを含むGeoJSON文
-                      字列                                              [文字列]
-      --city          起動時に中心付近を合わせる都市名（例: "Tokyo"）   [文字列]
-
-For flickr Provider
-      --p-flickr-APIKEY      Flickr ServiceのAPI KEY                    [文字列]
-      --p-flickr-Extras      カンマ区切り/保持する写真のメタデータ(デフォルト値
-                             は記載の有無に関わらず保持)
-      [文字列] [デフォルト: "date_upload,date_taken,owner_name,geo,url_sq,tags"]
-      --p-flickr-DateMode    利用時間軸(update=Flickr投稿日時/taken=写真撮影日時
-                             )
-                    [選択してください: "upload", "taken"] [デフォルト: "upload"]
-      --p-flickr-Haste       時間軸分割並列処理        [真偽] [デフォルト: true]
-      --p-flickr-GimmeGimme  Flickr画像を保存するディレクトリパス(指定しない場合
-                             は保存しない)                              [文字列]
-      --p-flickr-DateMax     クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1764679068]
-      --p-flickr-DateMin     クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD
-                                               [文字列] [デフォルト: 1072882800]
-
-Visualization (最低一つの指定が必須です)
-      --vis-bulky           全データをCircleMarkerとして地図上に表示
-                                                      [真偽] [デフォルト: false]
-      --vis-dbscan          クロール結果をDBSCANクラスタリングし、クラスタの凸包
-                            をポリゴンで可視化します。[真偽] [デフォルト: false]
-      --vis-heat            カテゴリ毎に異なるレイヤのヒートマップで可視化（色=
-                            カテゴリ色、透明度=頻度） [真偽] [デフォルト: false]
-      --vis-majority-hex    HexGrid内で最も出現頻度が高いカテゴリの色で彩色。Hex
-                            apartiteモードで6分割パイチャート表示。透明度は全体
-                            で正規化。                [真偽] [デフォルト: false]
-      --vis-marker-cluster  マーカークラスターとして地図上に表示
-                                                      [真偽] [デフォルト: false]
-      --vis-pie-charts      Hex中心にカテゴリ割合のPie
-                            Chartを描画するビジュアライザ
-                                                      [真偽] [デフォルト: false]
-      --vis-voronoi         Hex Grid ボロノイ図       [真偽] [デフォルト: false]
-
-For bulky Visualizer
-      --v-bulky-Radius       Point Markerの半径 | min=0, step=1
-                                                          [数値] [デフォルト: 5]
-      --v-bulky-Stroke       Point Markerの線の有無    [真偽] [デフォルト: true]
-      --v-bulky-Weight       Point Markerの線の太さ | min=0, step=1
-                                                          [数値] [デフォルト: 1]
-      --v-bulky-Opacity      Point Markerの線の透明度 | min=0, max=1, step=0.05
-                                                          [数値] [デフォルト: 1]
-      --v-bulky-Filling      Point Markerの塗りの有無  [真偽] [デフォルト: true]
-      --v-bulky-FillOpacity  Point Markerの塗りの透明度 | min=0, max=1,
-                             step=0.05                  [数値] [デフォルト: 0.5]
-
-For dbscan Visualizer
-      --v-dbscan-Eps             DBSCANのeps（クラスタ判定距離） | min=0.01,
-                                 step=0.01              [数値] [デフォルト: 0.6]
-      --v-dbscan-MinPts          DBSCANのminPts（クラスタ確定に必要な点数） |
-                                 min=1, step=1            [数値] [デフォルト: 6]
-      --v-dbscan-Units           epsで使用する距離単位
-       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
-                                                                   "kilometers"]
-      --v-dbscan-StrokeWidth     ポリゴン輪郭の太さ | min=0, max=10, step=0.5
-                                                          [数値] [デフォルト: 2]
-      --v-dbscan-StrokeOpacity   ポリゴン輪郭の透明度 | min=0, max=1, step=0.05
-                                                        [数値] [デフォルト: 0.9]
-      --v-dbscan-FillOpacity     ポリゴン塗りの透明度 | min=0, max=1, step=0.05
-                                                       [数値] [デフォルト: 0.35]
-      --v-dbscan-DashArray       LeafletのdashArray指定（例: "4 6"） | 例: 例: 4
-                                 6                     [文字列] [デフォルト: ""]
-      --v-dbscan-KernelScale     KDEカーネル半径をepsに対して何倍にするか |
-                                 min=0.1, max=10, step=0.1[数値] [デフォルト: 1]
-      --v-dbscan-GridSize        KDE計算用グリッド解像度（長辺方向セル数） |
-                                 min=8, max=256, step=1  [数値] [デフォルト: 80]
-      --v-dbscan-ContourPercent  最大密度に対する等値線レベル（0-1） | min=0.05,
-                                 max=0.95, step=0.05    [数値] [デフォルト: 0.4]
-
-For heat Visualizer
-      --v-heat-Radius           ヒートマップブラーの半径（Unitsで指定した距離単
-                                位） | min=0, step=1     [数値] [デフォルト: 50]
-      --v-heat-Units            Radiusに使用する距離単位
-       [文字列] [選択してください: "kilometers", "meters", "miles"] [デフォルト:
-                                                                       "meters"]
-      --v-heat-MinOpacity       ヒートマップの最小透明度 | min=0, max=1,
-                                step=0.05                 [数値] [デフォルト: 0]
-      --v-heat-MaxOpacity       ヒートマップの最大透明度 | min=0, max=1,
-                                step=0.05                 [数値] [デフォルト: 1]
-      --v-heat-MaxValue         ヒートマップ強度の最大値
-                                (未指定時はデータから自動推定) | step=1   [数値]
-      --v-heat-WeightThreshold  半径内の近傍点数（自分以外）がこの値未満の点は描
-                                画しない | min=0, step=1  [数値] [デフォルト: 1]
-
-For majority-hex Visualizer
-      --v-majority-hex-Hexapartite  中のカテゴリの頻度に応じて六角形を分割色彩
-                                                      [真偽] [デフォルト: false]
-      --v-majority-hex-HexOpacity   六角形の線の透明度 | min=0, max=1, step=0.05
-                                                          [数値] [デフォルト: 1]
-      --v-majority-hex-HexWeight    六角形の線の太さ | min=0, step=1
-                                                          [数値] [デフォルト: 1]
-      --v-majority-hex-MaxOpacity   正規化後の最大塗り透明度 | min=0, max=1,
-                                    step=0.05           [数値] [デフォルト: 0.9]
-      --v-majority-hex-MinOpacity   正規化後の最小塗り透明度 | min=0, max=1,
-                                    step=0.05           [数値] [デフォルト: 0.5]
-
-For marker-cluster Visualizer
-      --v-marker-cluster-MaxClusterRadius  クラスタを構成する範囲(半径) | min=1,
-                                           step=1        [数値] [デフォルト: 80]
-
-For pie-charts Visualizer
-      --v-pie-charts-MaxRadiusScale     Hex内接円半径に対する最大半径スケール
-                                        (0-1.5) | min=0.1, max=1.5, step=0.05
-                                                        [数値] [デフォルト: 0.9]
-      --v-pie-charts-MinRadiusScale     最大半径に対する最小半径スケール (0-1) |
-                                        min=0, max=1, step=0.05
-                                                       [数値] [デフォルト: 0.25]
-      --v-pie-charts-StrokeWidth        Pie Chart輪郭線の太さ(px) | min=0,
-                                        step=1            [数値] [デフォルト: 1]
-      --v-pie-charts-BackgroundOpacity  最大半径ガイドリングの透明度 (0-1) |
-                                        min=0, max=1, step=0.05
-                                                        [数値] [デフォルト: 0.2]
-
-For voronoi Visualizer
-      --v-voronoi-MaxSitesPerHex        ポワソン分布に基づいて各ヘックス内でサン
-                                        プリングされる最大サイト数 (0 = 無制限)
-                                        | min=0, step=1   [数値] [デフォルト: 0]
-      --v-voronoi-MinSiteSpacingMeters  各ヘックス内でサンプリングされたサイト間
-                                        の最小距離をメートル単位で保証 (0 =
-                                        無効) | min=0, step=1
-                                                         [数値] [デフォルト: 50]
-
-オプション:
-      --help     ヘルプを表示                                             [真偽]
-      --version  バージョンを表示                                         [真偽]
-```
 
 ## <a name='-1'></a>最小コマンド例
 
@@ -347,6 +200,8 @@ npx -y -p splatone@latest browse \
 | ```--p-flickr-GimmeGimme``` | 取得した画像を保存するディレクトリ（未指定時はダウンロードせず／失敗時は同名txtで記録） | 文字列         |               |
 | ```--p-flickr-DateMax```  | クローリング期間(最大) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | (動的)現時刻 |
 | ```--p-flickr-DateMin```  | クローリング期間(最小) UNIX TIMEもしくはYYYY-MM-DD                            | 文字列         | 1072882800   |
+| ```--p-flickr-ThrottleMaxConcurrent``` | Flickr API リクエストの同時実行数                                       | 数値           | 2            |
+| ```--p-flickr-ThrottleMinTimeMs```     | 連続する Flickr リクエスト間の最小待機時間 (ミリ秒)                    | 数値           | 500          |
 
 #### <a name='GimmeGimme'></a>GimmeGimmeモードで取得する写真とそのファイル名について
 - ```--p-flickr-GimmeGimme=保存ディレクトリのパス```のように指定してください。
@@ -370,6 +225,43 @@ APIキーは以下の３種類の方法で与える事ができます
     - `<provider>`はプロバイダー名 (flickr 等) に置き換えてください。
   - **flickr**の場合は```.API_KEY.flickr```になります。
   - optionや環境変数で与えるよりも優先されます。
+
+### <a name='gmap-google-places-text-searchを取得するクローラー'></a>gmap: Google Places Text Searchを取得するクローラー
+
+Google Maps Places Text Search API を利用して、テキストクエリに合致する POI を Hex 単位で収集します。`-p gmap` を指定し、`--keywords` で `カテゴリ名=TextSearchクエリ` を与えると、カテゴリ名で彩色しながらクエリ文字列を Google に送信します（例: `-k "カフェ=cafe tokyo|観光=landmark tokyo"`）。検索半径は UI のセルサイズ (`--ui-cell-size` と `--ui-units`) をメートル換算した値を自動適用し、API の上限である 50km を超えないようクランプされます。さらに各 Hex の外接 bbox を `locationbias=rectangle` として付与し、Text Search リクエスト自体が対象 Hex の範囲に収束するよう制御しています（最終結果も Hex 内判定でフィルタ）。
+
+| オプション | 説明 | 型 | デフォルト |
+| :-- | :-- | :-- | :-- |
+| `--p-gmap-APIKEY` | Google Places API キー。省略時は `.API_KEY.gmap` もしくは `API_KEY_gmap` 環境変数から読み込み。 | 文字列 |  |
+| `--p-gmap-Language` | Places API の `language` パラメータ。 | 文字列 | `ja` |
+| `--p-gmap-MaxPages` | Text Search の最大ページ数 (1〜3)。Google 側の仕様上、最大 3 ページ / 60 件。 | 数値 | 3 |
+| `--p-gmap-ThrottleMaxConcurrent` | Google Places リクエストの同時実行本数。 | 数値 | 2 |
+| `--p-gmap-ThrottleMinTimeMs` | 連続する Places リクエスト間の最小待機時間 (ミリ秒)。 | 数値 | 500 |
+
+進捗計算は内部定数 (60 件/Hexカテゴリ) を初期期待値として扱い、`next_page_token` が返らなくなったタイミングで実測件数に合わせて 100% に到達させるハイブリッド方式を用いています。
+
+Places API は 2 ページ目以降を取得する際に 2 秒程度の待ち時間が必要なため、内部で自動的に待機してから次ページのジョブを投入します。返却される地点はカテゴリ × Hex 単位で重複除去され、Flickr 由来のデータと同様に全ビジュアライザへそのまま流れます。
+
+### <a name='overpass-openstreetmapの地点を取得するクローラー'></a>overpass: OpenStreetMapの地点を取得するクローラー
+
+OpenStreetMap の Overpass API を用いて、タグ条件に一致するノード/ウェイ/リレーションを Hex 単位で収集します。`-p overpass` を指定し、`--keywords` で `カテゴリ名=タグ条件` を与えると、カテゴリ毎に Hex bbox 内へ個別の Overpass クエリを投げます。タグ条件は `amenity=restaurant` のような `key=value` 形式を基本とし、複数指定したい場合は `,` で区切って OR 検索します（例: `-k "麺類#D93C3C=amenity=ramen,amenity=noodle_shop"`）。`node:amenity=cafe` のように `node|way|relation:` プレフィックスを付けると特定の幾何種のみを対象にできます。
+
+| オプション | 説明 | 型 | デフォルト |
+| :-- | :-- | :-- | :-- |
+| `--p-overpass-Endpoint` | 利用する Overpass API interpreter の URL。 | 文字列 | `https://overpass-api.de/api/interpreter` |
+| `--p-overpass-TimeoutSeconds` | Overpass への 1 リクエストあたりのタイムアウト秒数。 | 数値 | 25 |
+| `--p-overpass-MaxRetries` | HTTP/ネットワークエラー時にリトライする最大回数。 | 数値 | 3 |
+| `--p-overpass-UserAgent` | Overpass API に送信する User-Agent。連絡先付きの文字列を推奨。 | 文字列 | `Splatone-Overpass (+https://github.com/YokoyamaLab/Splatone)` |
+| `--p-overpass-ThrottleMaxConcurrent` | Overpass への同時リクエスト最大数。推奨は 1。 | 数値 | 1 |
+| `--p-overpass-ThrottleMinTimeMs` | 連続リクエスト間の待ち時間 (ミリ秒)。 | 数値 | 1500 |
+
+進捗は「カテゴリ内に投入したクエリ数」を 100% とみなし、各クエリのレスポンスを受け取るたびに均等配分で加算します。たとえば 2 カテゴリ × 2 条件 (合計 4 クエリ) の場合、1 クエリ完了ごとに Hex 全体の進捗が 25% ずつ前進します。Overpass は共有リソースであるため、大きな bbox や極端に多いクエリを連続実行する際は時間帯やエンドポイント（市民大・Kumi Systems 等）にも配慮してください。デフォルトでは 1 本ずつ 1.5 秒間隔でシリアライズ送信しますが、必要であれば `--p-overpass-Throttle*` オプションで上書きできます（ただし連続アクセスしすぎないよう注意）。
+
+```bash
+$ npx -y -p splatone@latest crawler -p overpass -k "カフェ#ff5f5f=amenity=cafe,amenity=coffee_shop|文化施設#3366ff=tourism=museum,tourism=gallery" --vis-bulky --city "Kyoto"
+```
+
+上記例では京都市内の Hex を対象に、カフェ系と文化施設系の OpenStreetMap POI を 2 つのカテゴリで色分けしながら取得します。逓減処理後のジオメトリは Leaflet 上のどのビジュアライザでも利用できます。
 
 ## <a name='Visualizer'></a>Visualizer (可視化モジュール)
 
