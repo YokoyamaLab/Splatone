@@ -5,6 +5,26 @@ import { toUnixSeconds } from '#lib/splatone';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const PREVIEW_FIELDS = ['url_sq', 'url_s', 'url_t', 'url_q', 'url_m', 'url_n', 'url_z', 'url_c', 'url_l', 'url_o'];
+
+function pickPreviewUrl(photo = {}) {
+    for (const key of PREVIEW_FIELDS) {
+        if (photo[key]) {
+            return photo[key];
+        }
+    }
+    return null;
+}
+
+function escapeHtml(input = '') {
+    return String(input)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function fetchWithRetry(fetcher, { maxAttempts = 4, baseDelayMs = 500 } = {}) {
     let attempt = 0;
     let lastError = null;
@@ -90,6 +110,11 @@ export default async function ({
             });
             return rtn[0]?.properties?.triangleId.split('-')[1] || null;
         }
+        const previewUrl = pickPreviewUrl(photo);
+        const safeTitle = escapeHtml(photo.title || '');
+        const tooltipContent = previewUrl
+            ? `<img src="${previewUrl}" alt="${safeTitle}">`
+            : (safeTitle || 'NO Image');
         return point(
             [photo.longitude, photo.latitude],
             {
@@ -97,6 +122,7 @@ export default async function ({
                 splatone_provider: 'flickr',
                 splatone_hexId: hex.properties.hexId,
                 splatone_triId: getTriangleContainingPoint(point([photo.longitude, photo.latitude]), triangles),
+                tooltipContent
             }
         );
     }));

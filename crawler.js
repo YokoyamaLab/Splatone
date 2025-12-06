@@ -706,7 +706,8 @@ try {
       hex: cloneJsonSafe(target.hex ?? null),
       triangles: cloneJsonSafe(target.triangles ?? null),
       categories: cloneJsonSafe(target.categories ?? {}),
-      splatonePalette: cloneJsonSafe(target.splatonePalette ?? {})
+      splatonePalette: cloneJsonSafe(target.splatonePalette ?? {}),
+      gridMeta: cloneJsonSafe(target.gridMeta ?? null)
     };
   }
 
@@ -769,7 +770,8 @@ try {
       hex: target.hex ?? context.hexGrid ?? null,
       triangles: target.triangles ?? context.triangles ?? null,
       categories: target.categories ?? context.categories ?? {},
-      splatonePalette: target.splatonePalette ?? payload.palette ?? {}
+      splatonePalette: target.splatonePalette ?? payload.palette ?? {},
+      gridMeta: target.gridMeta ?? context.gridMeta ?? null
     };
     return {
       version: payload.version ?? 1,
@@ -786,6 +788,7 @@ try {
         hexGrid: normalizedTarget.hex,
         triangles: normalizedTarget.triangles,
         categories: normalizedTarget.categories,
+        gridMeta: normalizedTarget.gridMeta ?? null,
         cliOptions: (payload.context && payload.context.cliOptions) ? payload.context.cliOptions : {}
       }
     };
@@ -797,7 +800,8 @@ try {
       hex: cloneJsonSafe(sourceTarget.hex ?? null),
       triangles: cloneJsonSafe(sourceTarget.triangles ?? null),
       categories: cloneJsonSafe(sourceTarget.categories ?? {}),
-      splatonePalette: cloneJsonSafe(sourceTarget.splatonePalette ?? rawPayload?.palette ?? {})
+      splatonePalette: cloneJsonSafe(sourceTarget.splatonePalette ?? rawPayload?.palette ?? {}),
+      gridMeta: cloneJsonSafe(sourceTarget.gridMeta ?? null)
     };
   }
 
@@ -1205,7 +1209,8 @@ try {
           triangles: targets[req.sessionId].triangles,
           sessionId: req.sessionId,
           categories: targets[req.sessionId].categories,
-          providerOptions: providersOptions[argv.provider]
+          providerOptions: providersOptions[argv.provider],
+          gridMeta: targets[req.sessionId].gridMeta ?? null
         };
         await providers.call(argv.provider, 'crawl', workerOptions);
       }
@@ -1230,6 +1235,10 @@ try {
           return;
         }
         let { bbox, drawn, cellSize = 0, units = 'kilometers', tags = 'sea,beach|mountain,forest' } = req.query;
+        units = typeof units === 'string' ? units.toLowerCase() : 'kilometers';
+        if (!VALID_UI_UNITS.has(units)) {
+          units = 'kilometers';
+        }
         const boundary = String(bbox).split(',').map(Number);
         if (cellSize == 0) {
           //セルサイズ自動決定
@@ -1255,14 +1264,22 @@ try {
 
         if (bbox) {
           if (boundary.length !== 4 || !boundary.every(Number.isFinite)) {
-            return res.status(400).json({ error: 'bbox must be "minLon,minLat,maxLon,maxLat"' });
+            socket.emit('toast', {
+              text: 'bbox must be "minLon,minLat,maxLon,maxLat"',
+              class: 'error'
+            });
+            return;
           }
           bboxArray = boundary;
         }
 
         const sizeNum = Number(cellSize);
         if (!Number.isFinite(sizeNum) || sizeNum <= 0) {
-          return res.status(400).json({ error: 'cellSize must be a positive number' });
+          socket.emit('toast', {
+            text: 'cellSize must be a positive number',
+            class: 'error'
+          });
+          return;
         }
 
         //カテゴリ生成
@@ -1416,7 +1433,8 @@ try {
         }
         crawlers[sessionId] = {};
         processing[sessionId] = 0;
-        targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette };
+        const gridMeta = { cellSize: sizeNum, units };
+        targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette, gridMeta };
         socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
       } catch (e) {
         console.error(e);
@@ -1489,6 +1507,7 @@ try {
         triangles: target?.triangles?.features?.length ?? 0,
         categories: Object.keys(target?.categories ?? {}).length,
         crawled: 0,
+        progressCompleted: 0,
         remaining: 0,
         expected: 0,
         percent: 0
@@ -1500,6 +1519,7 @@ try {
       const hexStats = {
         categories: {},
         crawled: 0,
+        progressCompleted: 0,
         remaining: 0,
         expected: 0,
         percent: 0
@@ -1508,34 +1528,44 @@ try {
         const crawled = info?.ids instanceof Set
           ? info.ids.size
           : Number(info?.crawled) || 0;
-        const remaining = Number(info?.remaining) || 0;
-        const total = Number.isFinite(info?.total)
-          ? Number(info.total)
-          : crawled + remaining;
-        const percent = total === 0 ? 1 : Math.min(1, crawled / Math.max(1, total));
+        const progressCompleted = Number.isFinite(info?.progressCompleted)
+          ? info.progressCompleted
+          : crawled;
+        const expectedTotal = Number.isFinite(info?.progressExpected)
+          ? info.progressExpected
+          : (Number.isFinite(info?.total) ? Number(info.total) : crawled + (Number(info?.remaining) || 0));
+        const progressRemaining = Number.isFinite(info?.progressRemaining)
+          ? Math.max(0, info.progressRemaining)
+          : Math.max(0, expectedTotal - progressCompleted);
+        const percent = expectedTotal === 0 ? 1 : Math.min(1, progressCompleted / Math.max(1, expectedTotal));
         hexStats.categories[categoryName] = {
           crawled,
-          remaining,
-          total,
+          progressCompleted,
+          remaining: progressRemaining,
+          total: expectedTotal,
           percent,
           final: info?.final === true
         };
         hexStats.crawled += crawled;
-        hexStats.remaining += remaining;
-        hexStats.expected += total;
+        hexStats.progressCompleted += progressCompleted;
+        hexStats.remaining += progressRemaining;
+        hexStats.expected += expectedTotal;
       }
+      const hexProgressValue = hexStats.progressCompleted || hexStats.crawled;
       hexStats.percent = hexStats.expected === 0
         ? 1
-        : Math.min(1, hexStats.crawled / Math.max(1, hexStats.expected));
+        : Math.min(1, hexProgressValue / Math.max(1, hexStats.expected));
       summary.hexes[hexId] = hexStats;
       summary.totals.crawled += hexStats.crawled;
+      summary.totals.progressCompleted += hexProgressValue;
       summary.totals.remaining += hexStats.remaining;
       summary.totals.expected += hexStats.expected;
     }
 
+    const totalProgressValue = summary.totals.progressCompleted || summary.totals.crawled;
     summary.totals.percent = summary.totals.expected === 0
       ? 1
-      : Math.min(1, summary.totals.crawled / Math.max(1, summary.totals.expected));
+      : Math.min(1, totalProgressValue / Math.max(1, summary.totals.expected));
 
     return summary;
   }
@@ -1585,16 +1615,14 @@ try {
         }
         sessionCrawler[rtn.hexId] ??= {};
         sessionCrawler[rtn.hexId][rtn.category] ??= {};
-        sessionCrawler[rtn.hexId][rtn.category].terms ??= {};
-        if (!sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId]) {
-          //一つ上のTermIdを100%に更新。ラベルはPrefixLabelingなのでrtn.TermId.slice(0,-1)となる。
-          const prevTermId = rtn.TermId.slice(0, -1);
-          if (sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId] && !sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final) {
-            sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].final = true;
-            sessionCrawler[rtn.hexId][rtn.category].terms[prevTermId].remaining = 0;
+        const termMap = sessionCrawler[rtn.hexId][rtn.category].terms ??= {};
+        if (rtn.prevTermId && termMap[rtn.prevTermId]) {
+          if (!termMap[rtn.prevTermId].final) {
+            termMap[rtn.prevTermId].final = true;
           }
+          termMap[rtn.prevTermId].remaining = 0;
         }
-        sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId] ??= {};
+        termMap[rtn.TermId] ??= {};
         sessionCrawler[rtn.hexId][rtn.category].items ??= featureCollection([]);
         sessionCrawler[rtn.hexId][rtn.category].ids ??= new Set();
 
@@ -1615,17 +1643,48 @@ try {
           uniqueFeatures.push(feature);
         }
 
-        currentHexCategory.terms[rtn.TermId].remaining = rtn.remaining;
-        currentHexCategory.terms[rtn.TermId].final = rtn.final;
+        const termEntry = currentHexCategory.terms[rtn.TermId];
+        termEntry.remaining = rtn.remaining;
+        termEntry.final = rtn.final;
+        const progressDelta = Number(rtn.progressDelta);
+        if (Number.isFinite(progressDelta)) {
+          termEntry.progressCompleted = Math.max(0, (termEntry.progressCompleted ?? 0) + progressDelta);
+        }
         if (rtn.photos.features.length >= 250 && duplicateCount === rtn.photos.features.length) {
           console.error('[ERROR] ALL DUPLICATE');
         }
         const hexCategoryRemaining = Object.values(currentHexCategory.terms).reduce((sum, term) => sum + (term.remaining || 0), 0);
         currentHexCategory.remaining = hexCategoryRemaining;
-        currentHexCategory.total = hexCategoryRemaining + idSet.size;
         currentHexCategory.crawled = idSet.size;
+        const reportedExpected = Number(rtn.progressExpected ?? rtn.expected);
+        if (Number.isFinite(reportedExpected) && reportedExpected > 0) {
+          currentHexCategory.progressExpected = Math.max(currentHexCategory.progressExpected ?? 0, reportedExpected);
+        }
+        const fallbackTotal = hexCategoryRemaining + idSet.size;
+        currentHexCategory.total = fallbackTotal;
+        const categoryProgressCompleted = Object.values(currentHexCategory.terms)
+          .reduce((sum, term) => sum + (term.progressCompleted ?? 0), 0);
+        currentHexCategory.progressCompleted = categoryProgressCompleted > 0
+          ? categoryProgressCompleted
+          : undefined;
+        const progressBaseline = Number.isFinite(currentHexCategory.progressCompleted)
+          ? currentHexCategory.progressCompleted
+          : currentHexCategory.crawled;
+        if (currentHexCategory.progressExpected) {
+          currentHexCategory.progressRemaining = Math.max(0, currentHexCategory.progressExpected - progressBaseline);
+        } else {
+          currentHexCategory.progressRemaining = undefined;
+        }
         const allTermsFinal = Object.values(currentHexCategory.terms).every(term => term.final);
         currentHexCategory.final = allTermsFinal && hexCategoryRemaining === 0;
+        if (currentHexCategory.final) {
+          const completedValue = Number.isFinite(currentHexCategory.progressCompleted)
+            ? currentHexCategory.progressCompleted
+            : currentHexCategory.crawled;
+          currentHexCategory.progressCompleted = completedValue;
+          currentHexCategory.progressExpected = completedValue;
+          currentHexCategory.progressRemaining = 0;
+        }
 
         if (argv.debugVerbose) {
           console.log('INFO:', ` ${rtn.hexId} ${rtn.category} ] dup=${duplicateCount}, out=${rtn.outside}, in=${rtn.photos.features.length}  || ${currentHexCategory.crawled} / ${currentHexCategory.total}`);

@@ -16,6 +16,13 @@ const buildFlickrPageUrl = (props = {}) => {
     return `https://www.flickr.com/photos/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(id)}/`;
 };
 
+const resolveExternalUrl = (props = {}) => {
+    if (props.splatone_provider === 'gmap' && props.gmap_url) {
+        return props.gmap_url;
+    }
+    return buildFlickrPageUrl(props);
+};
+
 export default async function main(map, geojson = {}, options = {}) {
     console.log("[VIS OPTIONS]", options.visOptions);
     const layers = {};
@@ -34,14 +41,17 @@ export default async function main(map, geojson = {}, options = {}) {
                 });
             },
             onEachFeature: (feature, layer) => {
-                const previewUrl = pickPreviewUrl(feature.properties) || '';
-                const tooltipContent = previewUrl ? `<img src="${previewUrl}">` : 'NO Image!';
+                const pickFallbackTooltip = () => {
+                    const previewUrl = pickPreviewUrl(feature.properties) || '';
+                    return previewUrl ? `<img src="${previewUrl}">` : 'NO Image!';
+                };
+                const tooltipContent = feature.properties?.tooltipContent || pickFallbackTooltip();
                 layer.bindTooltip(tooltipContent, { direction: 'top', opacity: 0.9 });
 
-                const flickrUrl = buildFlickrPageUrl(feature.properties);
-                if (flickrUrl) {
+                const externalUrl = resolveExternalUrl(feature.properties);
+                if (externalUrl) {
                     layer.on('click', () => {
-                        window.open(flickrUrl, '_blank', 'noopener');
+                        window.open(externalUrl, '_blank', 'noopener');
                     });
                 }
             }
