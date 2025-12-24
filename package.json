@@ -15,9 +15,9 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "crawler": "./crawler.js",
-    "colors": "./color.js",
-    "browse": "./browse.js"
+    "crawler": "crawler.js",
+    "colors": "color.js",
+    "browse": "browse.js"
   },
   "imports": {
     "#lib/*": "./lib/*.js"
