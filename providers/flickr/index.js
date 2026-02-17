@@ -119,6 +119,21 @@ export default class FlickrProvider extends ProviderBase {
             type: 'number',
             default: DEFAULT_THROTTLE_MIN_TIME_MS,
             description: '連続リクエスト間の最小待機時間 (ミリ秒)'
+        }).option(this.argKey('RequestTimeoutMs'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'number',
+            default: 30000,
+            description: 'Flickr API リクエストのタイムアウト (ms)。ハング回避用'
+        }).option(this.argKey('RetryMaxAttempts'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'number',
+            default: 2,
+            description: 'Flickr API リクエストのリトライ回数（タイムアウト/一時エラー時）'
+        }).option(this.argKey('RetryBaseDelayMs'), {
+            group: 'For ' + this.id + ' Provider',
+            type: 'number',
+            default: 500,
+            description: 'Flickr API リトライの基準待機時間 (ms)。指数バックオフの基準'
         });
     }
 

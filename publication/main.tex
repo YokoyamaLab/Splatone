@@ -267,6 +267,133 @@ Visualizer層では，コアライブラリ層から受け取った位置情報�
 \section{Provider for SNS Data Crawling}
 \label{sec:provider}
 
+本章では，Splatone Crawlerが複数のジオソーシャルデータサービスを同一の枠組みで扱うためのProvider機構と，領域分割に基づくクローリング実行モデルを説明する．Providerは外部サービス固有のAPI呼び出しやレスポンス形式の差異を吸収し，GeoJSONを基底とするSUFS/Nakedへ正規化した点群を出力する．また，クローリングはHexGrid単位で分割されたサブクエリをワーカープロセスに割り当てることで，API制限を考慮しつつ並列性を確保する．
+
+\subsection{Providerプラグインの設計}
+Providerは，\texttt{providers/<id>/} 配下に配置されるプラグインであり，\texttt{index.js} にクラスをエクスポートすることで読み込まれる．Providerクラスは基底クラス\texttt{ProviderBase}を継承し，少なくとも以下の責務を担う．
+\begin{itemize}
+  \item CLIオプション（APIキー等）の定義（\texttt{yargv()}）
+  \item オプション検証・補完（\texttt{check()}：APIキー自動読込など）
+  \item 与えられた領域分割（HexGrid）とカテゴリ定義に基づくクローリング開始（\texttt{crawl()}）
+\end{itemize}
+
+ProviderのCLI引数は一貫して \texttt{--p-<providerId>-<OptionName>} のプレフィックスで与えられる．例えばFlickrでは \texttt{--p-flickr-APIKEY} のように指定する．この命名規約により，複数Providerのオプションが混在しても衝突せず，Provider追加時も既存CLIとの互換性を保ちやすい．
+
+Providerのロードは動的である．起動時に\texttt{providers}ディレクトリを走査し，\texttt{providerLoader}が依存関係（\texttt{dependencies}）を考慮してインスタンス化する．これにより，特定のProviderを追加・差し替えしてもメインルーチン側の改変を最小化できる．
+
+\subsection{領域分割とサブクエリ生成}
+Splatone Crawlerでは，ユーザがWeb UI上で指定する探索領域（矩形またはポリゴン）に対し，セルサイズをパラメータとしてHexGridを生成する（第\ref{sec:overview}章）．ProviderはこのHexGridの各セル（以降，Hexセル）を独立した問い合わせ単位として扱う．
+
+さらにカテゴリ（複数キーワード集合）が定義されているため，実際に発行されるサブクエリ数は，概ね
+$$
+N_{task} = |H| \times |C|
+$$
+となる（$|H|$ はHexセル数，$|C|$ はカテゴリ数）．各サブクエリは，\textbf{(Hexセル，カテゴリ)} の組で識別され，クローリング進捗もこの粒度で管理される．
+
+実装上は，Providerの\texttt{crawl()}が各Hexセル・各カテゴリについてワーカ実行要求（\texttt{splatone:start}イベント）を発火する．イベントのペイロードには，Hexセルポリゴン，その外接BBox，補助的な三角分割（後述），カテゴリ名，検索語（タグ集合またはクエリ文字列），およびProvider固有オプションが含まれる．
+
+\subsection{ワーカープロセスによる非同期クローリング}
+外部APIは一般にレート制限を持つため，単純に全サブクエリを同時発行すると容易に制限超過やタイムアウトを引き起こす．本ツールでは，サブクエリ実行をワーカープロセスに分離し，かつProviderごとにスロットリングを行うことで，安定的な収集を行う．
+
+各Providerには対応する\texttt{worker.js}が存在し，実際のAPI呼び出しとレスポンスのGeoJSON化を担当する．メインプロセスはワーカから返る結果を逐次統合し，重複ID（例：Flickrの写真ID，Google Placesの\texttt{place\_id}）の除去，進捗の更新，およびWeb UIへの通知を行う．
+
+\subsection{継続クローリングと\texttt{nextProviderOptions}}
+外部APIのページングや，時間窓の分割などにより，単一サブクエリが複数回のリクエストに分割される場合がある．Splatone Crawlerはこの状況に対応するため，ワーカが \texttt{nextProviderOptions} を返す設計を採用している．
+
+ワーカは，得られた結果（\texttt{photos}：FeatureCollection）に加えて，次回問い合わせに必要なトークン（例：ページトークン，更新した時間範囲）を埋め込んだ\texttt{providerOptions}の差分配列を返す．メインプロセスは \texttt{final=false} の場合に，この差分を用いて同一の (Hexセル，カテゴリ) に対する次のワーカタスクを自動的に再スケジュールする．この再帰的スケジューリングにより，Provider固有のページング／分割戦略を，メインルーチンを汚さずに実装できる．
+
+\subsection{SUFS/Nakedへの正規化}
+Providerワーカの出力は，GeoJSON FeatureCollectionであり，点ジオメトリを持つFeatureの\texttt{properties}に，最低限以下のメタデータを付与する．
+\begin{itemize}
+  \item \texttt{splatone\_provider}: 取得元Provider識別子
+  \item \texttt{splatone\_hexId}: 属するHexセルID
+  \item \texttt{splatone\_triId}: Hexセル内の補助三角形ID（任意）
+  \item \texttt{tooltipContent}: 地図上のポップアップ表示用HTML（任意）
+\end{itemize}
+これにより，可視化側はProvider種別に依存せず，カテゴリ色や集約単位（Hex/三角形）に基づく処理を統一的に実施できる．
+
+\subsection{同梱Provider}
+本節では，現バージョンで同梱している3種類のProvider（Flickr，Google Places Text Search，Overpass）について，クエリ方法と継続クローリング戦略を述べる．
+
+\subsubsection{Flickr Provider}
+Flickr ProviderはFlickr API \texttt{flickr.photos.search}を用い，指定領域（BBox）内でジオタグを持つ写真を検索し，撮影位置（緯度経度）とメタデータをSUFS/NakedのFeatureとして返す．1回の問い合わせでは最大250件を取得し，APIレスポンスに含まれるページ数・総件数に応じて継続クローリングを行う．
+
+Flickrではページングに加え，時間窓（投稿日時または撮影日時）の指定が可能である．本Providerでは\texttt{DateMin}と\texttt{DateMax}で時間範囲を制約し，新しい投稿から順に探索する．取得件数が多くページ数が閾値を超える場合は，時間範囲を二分割して並列探索する（\texttt{Haste}）．このときワーカは2本の\texttt{nextProviderOptions}を返し，時間窓を分割した2つのタスクとして再投入される．
+
+また，単一投稿者による高頻度投稿などにより短時間に大量の結果が返る場合，時間窓が極端に狭くなって探索が停滞しうる．本実装では投稿者分布と時間窓幅を観測し，一定条件下で時間をスキップすることで探索の安定性を高めている．
+
+Flickr Providerの主要なオプションを表\ref{tab:flickr_provider_params}に示す．APIキーは明示指定に加え，ローカルファイル（\texttt{.API\_KEY.flickr}）または環境変数からの自動読込にも対応する．
+
+\begin{table}[h]
+\centering\small
+\caption{Flickr Providerの主なコマンドライン引数}
+\label{tab:flickr_provider_params}
+\begin{tabular}{llll}
+\hline
+引数 & 型 & 説明 & デフォルト \\
+\hline
+\texttt{--p-flickr-APIKEY} & 文字列 & Flickr APIキー（自動読込可） &  \\
+\texttt{--p-flickr-Extras} & 文字列 & 取得するメタデータ（extras） & \texttt{date\_upload,date\_taken,owner\_name,geo,url\_sq,tags} \\
+\texttt{--p-flickr-DateMode} & 選択 & 時間軸（upload/taken） & upload \\
+\texttt{--p-flickr-DateMin} & 文字列/数値 & 期間下限（YYYY-MM-DD or UNIX秒） & 2004-01-01相当 \\
+\texttt{--p-flickr-DateMax} & 文字列/数値 & 期間上限（YYYY-MM-DD or UNIX秒） & 現在時刻付近 \\
+\texttt{--p-flickr-Haste} & 真偽 & 時間窓の分割並列探索 & true \\
+\texttt{--p-flickr-GimmeGimme} & 文字列 & 画像ダウンロード先（任意） &  \\
+\texttt{--p-flickr-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
+\texttt{--p-flickr-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Google Places Text Search Provider (gmap)}
+gmap ProviderはGoogle Places Text Search APIを用い，Hexセルの重心位置と半径（セルサイズから導出）を用いて地点情報を検索し，\texttt{place\_id} をIDとしてFeatureを生成する．Text Searchは \texttt{next\_page\_token} によるページングを持つため，ワーカはトークンを\texttt{nextProviderOptions}に格納し，最大ページ数（\texttt{MaxPages}）まで継続取得する．またトークンは即時に有効化されないため，次ページ取得前に待機時間（約2.2秒）を挿入する．
+
+検索語はカテゴリ定義から与えられるが，カンマ区切りで複数のクエリ語を指定した場合，それぞれを独立なバリアントとして実行し，(Hexセル，カテゴリ) 内に複数タームとして統合する．これにより，類義語・表記揺れを簡易にカバーできる．
+
+gmap Providerの主要なオプションを表\ref{tab:gmap_provider_params}に示す．APIキーは明示指定に加え，ローカルファイル（\texttt{.API\_KEY.gmap}）または環境変数からの自動読込にも対応する．
+
+\begin{table}[h]
+\centering\small
+\caption{gmap Providerの主なコマンドライン引数}
+\label{tab:gmap_provider_params}
+\begin{tabular}{llll}
+\hline
+引数 & 型 & 説明 & デフォルト \\
+\hline
+\texttt{--p-gmap-APIKEY} & 文字列 & Google Places APIキー（自動読込可） &  \\
+\texttt{--p-gmap-Language} & 文字列 & Places APIレスポンスの言語コード & ja \\
+\texttt{--p-gmap-MaxPages} & 数値 & Text Searchで辿る最大ページ数（1〜3） & 3 \\
+\texttt{--p-gmap-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
+\texttt{--p-gmap-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Overpass Provider}
+Overpass ProviderはOverpass APIを用い，OpenStreetMap上のPOI（node/way/relation）を収集する．クエリは，タグキーのみ（例：\texttt{amenity}）や，キーと値の等価・正規表現など（例：\texttt{amenity=cafe}，\texttt{name=~Tokyo}）を指定でき，必要に応じて対象型（\texttt{node:...} など）も制約できる．ワーカは指定BBoxを付与したOverpass QLを生成し，HTTP POSTで問い合わせ，返却された要素から代表座標（nodeの座標またはway/relationのcenter等）をPoint Featureに正規化する．
+
+Overpass APIは過負荷時に一時的なエラーを返すことがあるため，タイムアウトと再試行回数を指定できる．またUser-Agentを明示し，適切なアクセスを行うようにしている．
+
+Overpass Providerの主要なオプションを表\ref{tab:overpass_provider_params}に示す．
+
+\begin{table}[h]
+\centering\small
+\caption{Overpass Providerの主なコマンドライン引数}
+\label{tab:overpass_provider_params}
+\begin{tabular}{llll}
+\hline
+引数 & 型 & 説明 & デフォルト \\
+\hline
+\texttt{--p-overpass-Endpoint} & 文字列 & Overpass interpreter endpoint URL & \url{https://overpass-api.de/api/interpreter} \\
+\texttt{--p-overpass-TimeoutSeconds} & 数値 & リクエストタイムアウト（秒） & 25 \\
+\texttt{--p-overpass-MaxRetries} & 数値 & HTTP/ネットワークエラー時の再試行回数 & 3 \\
+\texttt{--p-overpass-UserAgent} & 文字列 & Overpassへ送るUser-Agent文字列 & Splatone-Overpass (+\url{https://github.com/YokoyamaLab/Splatone}) \\
+\texttt{--p-overpass-ThrottleMaxConcurrent} & 数値 & API同時実行数（1以上） & 1 \\
+\texttt{--p-overpass-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 1500 \\
+\hline
+\end{tabular}
+\end{table}
+
 
 \section{Color-based Visualization}
 \label{sec:colorviz}

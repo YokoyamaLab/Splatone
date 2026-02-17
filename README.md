@@ -4,13 +4,10 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
-    - [v0.0.22 → v0.0.33](#v0022--v0033)
-    - [v0.0.29 → → v0.0.32](#v0029---v0032)
-    - [v0.0.28 → v0.0.29](#v0028--v0029)
-    - [v0.0.23 → →　v0.0.28](#v0023--v0028)
-    - [v0.0.22 → →　v0.0.23](#v0022--v0023)
+    - [v0.0.23 → v0.0.34](#v0023--v0034)
 - [使い方](#使い方)
   - [最小コマンド例](#最小コマンド例)
+  - [NPMプラグイン (--plugin)](#npmプラグイン---plugin)
   - [ブラウズ専用モード](#ブラウズ専用モード)
     - [インタラクティブモード](#インタラクティブモード)
     - [デモモード](#デモモード)
@@ -54,6 +51,10 @@
     - [画像のダウンロード](#画像のダウンロード)
     - [データのダウンロード](#データのダウンロード)
     - [広範囲なデータ収集例](#広範囲なデータ収集例)
+  - [プラグイン開発 (Provider/Visualizer)](#プラグイン開発-providervisualizer)
+    - [Providerプラグイン要件](#providerプラグイン要件)
+    - [Visualizerプラグイン要件](#visualizerプラグイン要件)
+    - [サンプルプラグイン](#サンプルプラグイン)
 
 <!-- vscode-markdown-toc-config
 	numbering=false
@@ -80,46 +81,13 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 - Pie Charts: 円グラフグリッド
 - DBSCAN: ジオタグをDBSCANクラスタリングし、各クラスタの凸包をポリゴンとして表示
 
+実行例（可視化結果のサンプル）と、プラグイン開発のサンプルは [examples/README.md](examples/README.md) を参照してください。
+
 
 ## <a name='ChangeLog'></a>Change Log
 
-### <a name='v0.0.29v0.0.32'></a>v0.0.22 → v0.0.33
-
-* Google Maps Place APIからvenueをクローリングするProviderを実装: ```-p gmap```
-* OpenStreetMap Overpass APIからvenueをクローリングするProviderを実装: ```-p overpass```
-
-### <a name='v0.0.29v0.0.32'></a>v0.0.29 → → v0.0.32
-
-* BrowseモードにURL読み込み機能(デモモード)追加
-  * GitHub上に東京タワーとスカイツリーを例としてすべての可視化結果を掲載
-* gmapプロバイダ追加: Google Places Text Search APIから地点を取得
-* overpassプロバイダ追加: Overpass APIからOpenStreetMapのPOIを取得
-
-### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
-
-* ```--city```の追加
-  * ブラウザがデフォルトで表示する都市を指定できます
-  * 例: ```--city="Tokyo"```
-
-### <a name='v0.0.23v0.0.28'></a>v0.0.23 → →　v0.0.28
-
-* Flickrプロバイダ
-  * GimmeGimmeモード追加: Flickrから画像を指定ディレクトリにダウンロード
-* Bulkeyビジュアライザ
-  * PointMarkerをクリックしてFlickrの当該写真のページへ飛ぶ
-* NPX起動時にproverderやoutが読み込まれない問題を解決
-
-### <a name='v0.0.22v0.0.23'></a>v0.0.22 → →　v0.0.23
-
-* ブラウズモードの追加
-  * ダウンロードした結果ファイルを閲覧するモード
-  * ハンバーガーメニューの拡充
-    * 結果の統計情報の追加
-    * CLIコマンドの表示
-* **[可視化モジュール]** `--vis-dbscan` 追加
-  * DBSCANクラスタリング結果を凸包ポリゴンで可視化
-* カラーパレット生成ツールの改良
-  * ブラウザ上でカラーの確認と調整を可能に
+### <a name='v0.0.33v0.0.34'></a>v0.0.23 → v0.0.34
+- Provider/Visualizer の第三者開発対応
 
 [これ以前のログ](CHANGELOG.md)
 
@@ -141,6 +109,36 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ```bash
 $ npx -y -p splatone@latest crawler -p flickr -k "canal,river,sea|street,alley|bridge" --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```
+
+## NPMプラグイン (--plugin)
+
+第三者が NPM で公開した Provider/Visualizer を、実行時に追加してロードできます。
+
+- `--plugin` は「ロードするパッケージ名」の指定です（複数可）。
+- 実際に使う Provider は `-p/--provider <id>`、Visualizer は `--vis-<id>` で選択します。
+- npx 前提の場合、追加パッケージは `npx -p <pkg>` で同時に取得します。
+
+例: Provider プラグインを追加して使う（hello）
+
+```bash
+npx -y -p splatone@latest -p splatone-provider-hello crawler \
+  --plugin splatone-provider-hello \
+  -p hello \
+  -k "A=a|B=b" \
+  --vis-bulky \
+  --p-hello-PointsPerHex 10
+```
+
+例: Visualizer プラグインを追加して使う（simple）
+
+```bash
+npx -y -p splatone@latest -p splatone-visualizer-simple crawler \
+  --plugin splatone-visualizer-simple \
+  -p flickr \
+  -k "canal,river|street" \
+  --vis-simple \
+  --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
 ![](assets/screenshot_venice_simple.png?raw=true)
@@ -180,7 +178,7 @@ npx -y -p splatone@latest crawl --browse-mode
 
 ```shell
 npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-bulky.json"
+--browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/bundle-providers/tower-bulky.json"
 ```
 
 # 詳細説明
@@ -194,7 +192,7 @@ npx -y -p splatone@latest browse \
 | オプション                | 説明                                                                          | 型             | デフォルト   |
 | :------------------------ | :---------------------------------------------------------------------------- | :------------- | :----------- |
 | ```--p-flickr-APIKEY```   | Flickr ServiceのAPI KEY                                                       | 文字列         |              |
-| ```--p-flickr-Extras```   | カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持) | 文字列         | date_upload  |,date_taken,owner_name,geo,url_sq,tags
+| ```--p-flickr-Extras```   | カンマ区切り/保持する写真のメタデータ(デフォルト値は記載の有無に関わらず保持) | 文字列         | ```date_upload,date_taken,owner_name,geo,url_sq,tags``` |
 | ```--p-flickr-DateMode``` | 利用時間軸(update=Flickr投稿日時/taken=写真撮影日時)                          | 選択: "upload" | "taken"      |,"upload"
 | ```--p-flickr-Haste```    | 時間軸分割並列処理                                                            | 真偽           | true         |
 | ```--p-flickr-GimmeGimme``` | 取得した画像を保存するディレクトリ（未指定時はダウンロードせず／失敗時は同名txtで記録） | 文字列         |               |
@@ -521,3 +519,69 @@ npx -y -p splatone@latest color --no-ansi 6 3
 * クエリ数はおおよそ1 query/secに調整されますので、時間はかかりますが大量のデータを収集する事も可能です。
 
 ![](/assets/screenshot_massive_points_bulky.png)
+
+## プラグイン開発 (Provider/Visualizer)
+
+Splatone は、Provider / Visualizer を NPM パッケージとして配布し、実行時に `--plugin` で明示ロードできます。
+
+### Providerプラグイン要件
+
+- パッケージ名: `splatone-provider-<id>`（`<id>` は CLI の `-p/--provider <id>` と一致させるのが推奨）
+- エントリポイント: パッケージの default export として Provider クラスを公開
+  - `ProviderBase` を継承し、少なくとも `yargv()`, `check()`, `crawl()` を実装
+  - `static id` を設定（またはコンストラクタで `this.id` を設定）
+- worker: Piscina で実行する worker を **必ず同梱**し、`<pkg>/worker` として解決できるようにする
+  - `package.json` の `exports` に `"./worker": "./worker.js"` を含める（推奨）
+
+最小の `exports` 例:
+
+```json
+{
+  "name": "splatone-provider-hello",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./worker": "./worker.js"
+  }
+}
+```
+
+### Visualizerプラグイン要件
+
+- パッケージ名: `splatone-visualizer-<id>`（`<id>` は CLI の `--vis-<id>` と一致させるのが推奨）
+- エントリポイント: パッケージの default export として Visualizer クラスを公開
+  - `VisualizerBase` を継承し、少なくとも `getFutureCollection()` を実装
+  - `static id` を設定（またはコンストラクタで `this.id` を設定）
+- Web 側エントリ: `web.js` を同梱し、`<pkg>/web` として解決できるようにする
+  - `package.json` の `exports` に `"./web": "./web.js"` を含める（推奨）
+- 任意: `public/` ディレクトリを同梱すると、`/visualizer/<id>/public/*` として配信されます
+
+最小の `exports` 例:
+
+```json
+{
+  "name": "splatone-visualizer-simple",
+  "type": "module",
+  "exports": {
+    ".": "./node.js",
+    "./web": "./web.js"
+  }
+}
+```
+
+### サンプルプラグイン
+
+このリポジトリには、最小構成のサンプルを同梱しています。
+
+- Provider: `examples/plugins/splatone-provider-hello/`
+- Visualizer: `examples/plugins/splatone-visualizer-simple/`
+
+ローカルで試す例（サンプルを npx で追加インストールして実行）:
+
+```bash
+npx -y -p splatone@latest -p ./examples/plugins/splatone-provider-hello crawler \
+  --plugin splatone-provider-hello \
+  -p hello \
+  -k "A=a|B=b" \
+  --vis-bulky
+```

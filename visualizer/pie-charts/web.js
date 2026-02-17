@@ -134,31 +134,52 @@ function renderPieSvg(feature, palette, visOptions, stats, radiusRange) {
 	const total = validCategories.reduce((sum, cat) => sum + cat.count, 0);
 	if (total === 0) return null;
 
+	// SVG の円弧(path + A)は「完全な円（開始点=終了点）」を表現できず、
+	// 1カテゴリのみ/または 2+カテゴリでもほぼ1カテゴリ支配のときに描画が欠ける場合がある。
+	// 対策: 支配的スライスを円(circle)として先に塗り、残りを上から wedge で重ねる。
+	const FULL_CIRCLE_RATIO_EPS = 1e-6;
+	let baseFillCircle = null;
+
 	let currentAngle = -Math.PI / 2;
 	const slices = [];
-	for (const cat of validCategories) {
+	for (let i = 0; i < validCategories.length; i += 1) {
+		const cat = validCategories[i];
 		const ratio = cat.count / total;
 		const angleSpan = ratio * Math.PI * 2;
 		if (angleSpan <= 0) continue;
 		const startAngle = currentAngle;
 		const endAngle = currentAngle + angleSpan;
 		currentAngle = endAngle;
-	const radius = computeRadiusPixels(cat.count, stats, radiusRange);
+		const radius = computeRadiusPixels(cat.count, stats, radiusRange);
 		if (radius <= 0) continue;
+
+		const color = palette[cat.name]?.color || '#888888';
+		const stroke = palette[cat.name]?.darken || 'rgba(0,0,0,0.4)';
+
+		// 最も大きい（先頭）カテゴリが「ほぼ全周」のときは base fill に回す
+		if (i === 0 && ratio >= (1 - FULL_CIRCLE_RATIO_EPS)) {
+			baseFillCircle = { radius, color, stroke, count: cat.count, name: cat.name };
+			continue;
+		}
+
 		slices.push({
 			path: buildSlicePath(cx, cy, radius, startAngle, endAngle),
-			color: palette[cat.name]?.color || '#888888',
-			stroke: palette[cat.name]?.darken || 'rgba(0,0,0,0.4)',
+			color,
+			stroke,
 			count: cat.count,
 			name: cat.name
 		});
 	}
 
-	if (!slices.length) return null;
+	if (!slices.length && !baseFillCircle) return null;
 
 	const outlineColor = 'rgba(0,0,0,0.35)';
 	const svgParts = [`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-label="hex pie chart">`];
 	svgParts.push(`<circle cx="${cx}" cy="${cy}" r="${maxRadius}" fill="rgba(255,255,255,${backgroundOpacity})" stroke="${outlineColor}" stroke-width="${strokeWidth}" />`);
+
+	if (baseFillCircle) {
+		svgParts.push(`<circle cx="${cx}" cy="${cy}" r="${baseFillCircle.radius}" fill="${baseFillCircle.color}" stroke="${baseFillCircle.stroke}" stroke-width="${Math.max(0.5, strokeWidth * 0.6)}" />`);
+	}
 
 	for (const slice of slices) {
 		if (!slice.path) continue;

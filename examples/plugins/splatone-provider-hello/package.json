@@ -1,0 +1,14 @@
+{
+  "name": "splatone-provider-hello",
+  "version": "0.1.0",
+  "description": "Example Splatone Provider plugin (hello)",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./worker": "./worker.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}

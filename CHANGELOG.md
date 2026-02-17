@@ -1,6 +1,43 @@
 # Splatone Change Log
 
-## Versions
+## Versions### <a name='v0.0.32v0.0.33'></a>v0.0.32 → v0.0.33
+
+* Google Maps Place APIからvenueをクローリングするProviderを実装: ```-p gmap```
+* OpenStreetMap Overpass APIからvenueをクローリングするProviderを実装: ```-p overpass```
+
+### <a name='v0.0.29v0.0.32'></a>v0.0.29 → → v0.0.32
+
+* BrowseモードにURL読み込み機能(デモモード)追加
+  * GitHub上に東京タワーとスカイツリーを例としてすべての可視化結果を掲載
+* gmapプロバイダ追加: Google Places Text Search APIから地点を取得
+* overpassプロバイダ追加: Overpass APIからOpenStreetMapのPOIを取得
+
+### <a name='v0.0.28v0.0.29'></a>v0.0.28 → v0.0.29
+
+* ```--city```の追加
+  * ブラウザがデフォルトで表示する都市を指定できます
+  * 例: ```--city="Tokyo"```
+
+### <a name='v0.0.23v0.0.28'></a>v0.0.23 → →　v0.0.28
+
+* Flickrプロバイダ
+  * GimmeGimmeモード追加: Flickrから画像を指定ディレクトリにダウンロード
+* Bulkeyビジュアライザ
+  * PointMarkerをクリックしてFlickrの当該写真のページへ飛ぶ
+* NPX起動時にproverderやoutが読み込まれない問題を解決
+
+### <a name='v0.0.22v0.0.23'></a>v0.0.22 → →　v0.0.23
+
+* ブラウズモードの追加
+  * ダウンロードした結果ファイルを閲覧するモード
+  * ハンバーガーメニューの拡充
+    * 結果の統計情報の追加
+    * CLIコマンドの表示
+* **[可視化モジュール]** `--vis-dbscan` 追加
+  * DBSCANクラスタリング結果を凸包ポリゴンで可視化
+* カラーパレット生成ツールの改良
+  * ブラウザ上でカラーの確認と調整を可能に
+
 ### <a name='v0.0.18v0.0.22'></a>v0.0.18 → →　v0.0.22
 
 * **[可視化モジュール]** ```--vis-voronoi```追加

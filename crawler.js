@@ -12,6 +12,7 @@ import fs, { existsSync, writeFileSync, constants, createWriteStream } from 'nod
 import { access, readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import { MessageChannel } from 'worker_threads';
+import { createRequire } from 'node:module';
 
 // -------------------------------
 // Third-party
@@ -46,6 +47,59 @@ const title = 'Splatone - Multi-Layer Composite Heatmap Viewer';
 const CLI_BASE_COMMAND = process.env.SPLATONE_CLI_BASE ?? 'npx -y -p splatone@latest crawler';
 let providersOptions = {};
 let visOptions = {};
+
+const require = createRequire(import.meta.url);
+
+const normalizePluginSpecifier = (raw) => {
+  const spec = String(raw ?? '').trim();
+  if (!spec) return null;
+  // 非スコープパッケージの "name@1.2.3" を "name" に正規化
+  if (!spec.startsWith('@')) {
+    const at = spec.indexOf('@');
+    if (at > 0) return spec.slice(0, at);
+    return spec;
+  }
+  // スコープ付き "@scope/name@1.2.3" の場合、最後の @ 以降が version の可能性
+  const lastAt = spec.lastIndexOf('@');
+  const slash = spec.lastIndexOf('/');
+  if (lastAt > slash && slash >= 0) {
+    return spec.slice(0, lastAt);
+  }
+  return spec;
+};
+
+const classifyPluginPackage = (pkg) => {
+  const base = String(pkg).split('/').filter(Boolean).pop() || String(pkg);
+  if (base.startsWith('splatone-provider-')) return 'provider';
+  if (base.startsWith('splatone-visualizer-')) return 'visualizer';
+  return 'unknown';
+};
+
+const findPackageRootFromEntry = async (entryFile) => {
+  let current = path.dirname(entryFile);
+  for (let i = 0; i < 15; i += 1) {
+    const candidate = path.join(current, 'package.json');
+    try {
+      await access(candidate, constants.F_OK);
+      return current;
+    } catch {
+      const parent = path.dirname(current);
+      if (!parent || parent === current) break;
+      current = parent;
+    }
+  }
+  return path.dirname(entryFile);
+};
+
+const formatPluginImportError = (pkg, err) => {
+  const reason = err?.message || String(err);
+  return (
+    `プラグイン "${pkg}" を読み込めませんでした。\n` +
+    `npx 前提の場合は、実行時に追加パッケージとして -p で指定してください。\n` +
+    `例: npx -y -p splatone@latest -p ${pkg} crawler --plugin ${pkg} ...\n` +
+    `(詳細: ${reason})`
+  );
+};
 
 const flickrLimiter = new Bottleneck({
   maxConcurrent: 6,
@@ -240,6 +294,41 @@ const isSessionFullyComplete = (crawler = {}, target = {}) => {
   return true;
 };
 
+function findFirstIncomplete(crawler = {}, target = {}) {
+  const hexFeatures = target?.hex?.features ?? [];
+  const categoryKeys = Object.keys(target?.categories ?? {});
+  if (hexFeatures.length === 0 || categoryKeys.length === 0) {
+    return { reason: 'missing target hex/categories' };
+  }
+  for (const feature of hexFeatures) {
+    const hexId = feature?.properties?.hexId;
+    if (hexId == null) {
+      return { reason: 'missing hexId in target' };
+    }
+    const hexEntry = crawler?.[hexId];
+    if (!hexEntry) {
+      return { reason: 'missing hex entry in crawler', hexId };
+    }
+    for (const categoryKey of categoryKeys) {
+      const categoryEntry = hexEntry?.[categoryKey];
+      if (!categoryEntry) {
+        return { reason: 'missing category entry in crawler', hexId, categoryKey };
+      }
+      if (categoryEntry?.final !== true) {
+        const remaining = Number(categoryEntry?.remaining);
+        return {
+          reason: 'category not final',
+          hexId,
+          categoryKey,
+          remaining: Number.isFinite(remaining) ? remaining : null,
+          terms: Object.keys(categoryEntry?.terms ?? {}).length
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function normalizeUiCellSize(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num < 0) {
@@ -314,6 +403,28 @@ function buildUiDefaults(argv) {
 
 try {
 
+  // --- 事前パース: --plugin を先に取得（strict パース前に拡張を組み込むため）
+  const preArgv = yargs(hideBin(process.argv))
+    .exitProcess(false)
+    .help(false)
+    .version(false)
+    .strict(false)
+    .option('plugin', {
+      group: 'Basic Options',
+      type: 'string',
+      array: true,
+      default: [],
+      description: 'NPMパッケージとして配布されたProvider/Visualizerを明示ロードする（例: splatone-provider-foo）'
+    })
+    .parseSync();
+
+  const rawPlugins = Array.isArray(preArgv.plugin) ? preArgv.plugin : (preArgv.plugin ? [preArgv.plugin] : []);
+  const pluginPackages = [...new Set(rawPlugins.map(normalizePluginSpecifier).filter(Boolean))];
+  const providerPluginPackages = pluginPackages.filter((p) => classifyPluginPackage(p) === 'provider');
+  const visualizerPluginPackages = pluginPackages.filter((p) => classifyPluginPackage(p) === 'visualizer');
+
+  // Provider 読み込み
+
   // Provider 読み込み
   const api = {
     log: (...a) => console.log('[app]', ...a),
@@ -321,15 +432,76 @@ try {
     getProvider: (id) => providers.get(id),
   };
 
-  const providers = await loadProviders({
-    dir: PROVIDER_BASE,
-    api,
-    optionsById: {},
-  });
+  let providers;
+  try {
+    providers = await loadProviders({
+      dir: PROVIDER_BASE,
+      api,
+      optionsById: {},
+      packages: providerPluginPackages,
+    });
+  } catch (err) {
+    const message = err?.message || String(err);
+    const m = String(message).match(/failed to import package \"([^\"]+)\"/);
+    if (m?.[1]) {
+      throw new Error(formatPluginImportError(m[1], err));
+    }
+    throw err;
+  }
   const installedProviderIds = providers.list();
+
+  // --- NPM Provider plugin の worker 解決（Piscina 用 filename 登録）
+  const providerWorkerFilenameRegistry = new Map(); // id -> file URL (href)
+  const resolveProviderWorkerFromPackage = (pkg) => {
+    // 1) exports に "./worker" があるパターン（推奨）
+    const candidates = [`${pkg}/worker`, `${pkg}/worker.js`];
+    for (const spec of candidates) {
+      try {
+        const resolved = require.resolve(spec);
+        return pathToFileURL(resolved).href;
+      } catch {
+        // try next
+      }
+    }
+    // 2) package root を辿って worker.js を探す（後方互換）
+    try {
+      const pkgJsonPath = require.resolve(`${pkg}/package.json`);
+      const pkgRoot = path.dirname(pkgJsonPath);
+      const fileCandidates = [
+        path.join(pkgRoot, 'worker.js'),
+        path.join(pkgRoot, 'dist', 'worker.js'),
+        path.join(pkgRoot, 'worker.mjs'),
+        path.join(pkgRoot, 'dist', 'worker.mjs'),
+      ];
+      for (const f of fileCandidates) {
+        if (existsSync(f)) {
+          return pathToFileURL(f).href;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  for (const provId of installedProviderIds) {
+    const inst = providers.get(provId);
+    const pkg = inst?.__splatonePackage;
+    if (!pkg) continue;
+    const workerHref = resolveProviderWorkerFromPackage(pkg);
+    if (!workerHref) {
+      throw new Error(
+        `Provider プラグイン "${pkg}" (id=${provId}) の worker エントリを解決できませんでした。\n` +
+        `パッケージ側で "./worker" を exports し、worker 実体 (worker.js) を同梱してください。\n` +
+        `例: package.json の exports に { "./worker": "./worker.js" } を追加します。`
+      );
+    }
+    providerWorkerFilenameRegistry.set(provId, workerHref);
+  }
 
   // Visualizer読み込み
   const all_visualizers = {};  // { [name: string]: class }
+  const visualizerAssetRegistry = new Map();
   const registerOptionSchema = (name, schema) => {
     if (!name || !schema || typeof schema !== 'object') {
       return;
@@ -376,6 +548,10 @@ try {
           continue;
         }
         all_visualizers[name] = Cls;
+        visualizerAssetRegistry.set(name, {
+          webJsPath: resolve(VIZ_BASE, name, 'web.js'),
+          publicDir: resolve(VIZ_BASE, name, 'public')
+        });
         const schema = extractOptionSchemaFromVisualizer(Cls);
         if (schema) {
           registerOptionSchema(name, schema);
@@ -388,6 +564,95 @@ try {
     }
   }
   await loadVisualizerClasses();
+
+  // --- NPM Visualizer plugin 読み込み（明示ロード）
+  const loadNpmVisualizerPlugins = async (packages) => {
+    for (const pkg of packages) {
+      let mod;
+      try {
+        mod = await import(pkg);
+      } catch (err) {
+        throw new Error(formatPluginImportError(pkg, err));
+      }
+      // class 判定
+      let Cls = null;
+      if (isClass(mod?.default)) {
+        Cls = mod.default;
+      } else {
+        for (const v of Object.values(mod ?? {})) {
+          if (isClass(v)) { Cls = v; break; }
+        }
+      }
+      if (!Cls) {
+        throw new Error(
+          `プラグイン "${pkg}" から Visualizer クラスを見つけられませんでした。\n` +
+          `default export で Visualizer クラスを公開してください。`
+        );
+      }
+
+      // id 決定（package名の suffix を既定にする）
+      const base = String(pkg).split('/').filter(Boolean).pop() || String(pkg);
+      const inferredId = (base.match(/^splatone-visualizer-(.+)$/) || [null, base])[1];
+      const visualizerId = Cls.id || inferredId;
+      // static id を補完（VisualizerBase のフォールバックが効く）
+      if (!Cls.id) {
+        Cls.id = visualizerId;
+      }
+
+      if (all_visualizers[visualizerId]) {
+        throw new Error(`Visualizer id "${visualizerId}" が既に存在します（package=${pkg}）。別の id を使用してください。`);
+      }
+
+      // web.js 解決
+      let webJsPath = null;
+      try {
+        webJsPath = require.resolve(`${pkg}/web`);
+      } catch {
+        try { webJsPath = require.resolve(`${pkg}/web.js`); } catch {}
+      }
+
+      // package root を推定してフォールバック探索
+      let pkgRoot = null;
+      try {
+        const entry = require.resolve(pkg);
+        pkgRoot = await findPackageRootFromEntry(entry);
+      } catch {
+        pkgRoot = null;
+      }
+      if (!webJsPath && pkgRoot) {
+        const candidate = path.join(pkgRoot, 'web.js');
+        try { await access(candidate, constants.F_OK); webJsPath = candidate; } catch {}
+        if (!webJsPath) {
+          const candidateDist = path.join(pkgRoot, 'dist', 'web.js');
+          try { await access(candidateDist, constants.F_OK); webJsPath = candidateDist; } catch {}
+        }
+      }
+
+      if (!webJsPath) {
+        throw new Error(
+          `Visualizerプラグイン "${pkg}" の web エントリが見つかりません。\n` +
+          `"${pkg}/web" もしくは package 直下の web.js を用意してください。`
+        );
+      }
+
+      // public dir（任意）
+      let publicDir = null;
+      if (pkgRoot) {
+        const candidatePublic = path.join(pkgRoot, 'public');
+        try { await access(candidatePublic, constants.F_OK); publicDir = candidatePublic; } catch {}
+      }
+
+      all_visualizers[visualizerId] = Cls;
+      visualizerAssetRegistry.set(visualizerId, { webJsPath, publicDir });
+      const schema = extractOptionSchemaFromVisualizer(Cls);
+      if (schema) {
+        registerOptionSchema(visualizerId, schema);
+      }
+      console.log(`[visualizer] loaded plugin: ${visualizerId} (${pkg})`);
+    }
+  };
+
+  await loadNpmVisualizerPlugins(visualizerPluginPackages);
   // --- 2) node.js への直接アクセスを 404（保険）
   app.use('/visualizer', (req, res, next) => {
     if (/\/node\.js(?:$|\?)/.test(req.path)) return res.sendStatus(404);
@@ -395,7 +660,9 @@ try {
   });
   // --- 3) web.js のみ直リンクで配信（ホワイトリスト式）
   app.get('/visualizer/:name/web.js', async (req, res) => {
-    const file = resolve(VIZ_BASE, req.params.name, 'web.js');
+    const name = req.params.name;
+    const entry = visualizerAssetRegistry.get(name);
+    const file = entry?.webJsPath ?? resolve(VIZ_BASE, name, 'web.js');
     try { await access(file); res.sendFile(file); }
     catch (e) { console.log(e); res.sendStatus(404); }
   });
@@ -404,7 +671,12 @@ try {
     // :name を取り出して、そのフォルダの /public だけ公開する
     const name = req.params?.name || (req.url.split('/')[1] || '');
     req.url = req.originalUrl.replace(`/visualizer/${name}/public`, '') || '/';
-    express.static(resolve(VIZ_BASE, name, 'public'))(req, res, next);
+    const entry = visualizerAssetRegistry.get(name);
+    const dir = entry?.publicDir ?? resolve(VIZ_BASE, name, 'public');
+    if (!dir) {
+      return next();
+    }
+    return express.static(dir)(req, res, next);
   });
   // コマンド例
   // node crawler.js -p flickr -o '{"flickr":{"API_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' -k "商業=shop,souvenir,market,supermarket,pharmacy,store,department|食べ物=food,drink,restaurant,cafe,bar|美術館=museum,art,exhibition,expo,sculpture,heritage|公園=park,garden,flower,green,pond,playground" --vis-bulky
@@ -418,6 +690,13 @@ try {
   let yargv = await yargs(hideBin(process.argv))
     .strict()                        // 未定義オプションはエラー
     .usage('使い方: $0 [options]')
+    .option('plugin', {
+      group: 'Basic Options',
+      type: 'string',
+      array: true,
+      default: [],
+      description: 'NPMパッケージとして配布されたProvider/Visualizerを明示ロードする（例: splatone-provider-foo）'
+    })
     .option('provider', {
       group: 'Basic Options',
       alias: 'p',
@@ -455,6 +734,16 @@ try {
       type: 'boolean',
       default: false,
       description: 'デバッグ情報出力'
+    }).option('watchdog', {
+      group: 'Debug',
+      type: 'boolean',
+      default: false,
+      description: '処理が停滞したときにwatchdog警告を出す（通常のdebug-verboseログは出さない）'
+    }).option('server-progress', {
+      group: 'Debug',
+      type: 'boolean',
+      default: false,
+      description: 'クロール中、一定間隔でサーバ側に進捗サマリを出力する'
     }).option('ui-cell-size', {
       group: 'UI Defaults',
       type: 'number',
@@ -597,6 +886,78 @@ try {
   const crawlers = {};
   const targets = {};
   const rawSnapshotRegistry = new Map();
+
+  const sessionHasCrawlingStarted = new Set(); // sessionId
+
+  const inflightTasksBySession = new Map(); // sessionId -> Map(taskKey -> meta)
+  const taskKeyFromWorkerOptions = (workerOptions) => {
+    const sessionId = workerOptions?.sessionId ?? '';
+    const hexId = workerOptions?.hex?.properties?.hexId ?? '';
+    const category = workerOptions?.category ?? '';
+    const termId = workerOptions?.providerOptions?.TermId ?? '';
+    const dateMin = workerOptions?.providerOptions?.DateMin ?? '';
+    const dateMax = workerOptions?.providerOptions?.DateMax ?? '';
+    return `${sessionId}|${hexId}|${category}|${termId}|${dateMin}|${dateMax}`;
+  };
+  const recordTaskStart = (workerOptions) => {
+    const sessionId = workerOptions?.sessionId;
+    if (!sessionId) return;
+    const key = taskKeyFromWorkerOptions(workerOptions);
+    let map = inflightTasksBySession.get(sessionId);
+    if (!map) {
+      map = new Map();
+      inflightTasksBySession.set(sessionId, map);
+    }
+    const hexId = workerOptions?.hex?.properties?.hexId ?? null;
+    const category = workerOptions?.category ?? null;
+    const provider = workerOptions?.provider ?? null;
+    const providerOptions = workerOptions?.providerOptions ?? {};
+    map.set(key, {
+      key,
+      startedAt: Date.now(),
+      provider,
+      hexId,
+      category,
+      termId: providerOptions?.TermId ?? null,
+      dateMin: providerOptions?.DateMin ?? null,
+      dateMax: providerOptions?.DateMax ?? null,
+    });
+  };
+  const recordTaskEnd = (workerOptions) => {
+    const sessionId = workerOptions?.sessionId;
+    if (!sessionId) return;
+    const map = inflightTasksBySession.get(sessionId);
+    if (!map) return;
+    const key = taskKeyFromWorkerOptions(workerOptions);
+    map.delete(key);
+    if (map.size === 0) {
+      inflightTasksBySession.delete(sessionId);
+    }
+  };
+  const getInflightSamples = (sessionId, { hexId, category } = {}) => {
+    const map = inflightTasksBySession.get(sessionId);
+    if (!map || map.size === 0) return [];
+    const now = Date.now();
+    const all = Array.from(map.values())
+      .filter((m) => (hexId == null || m.hexId === hexId) && (!category || m.category === category))
+      .map((m) => ({
+        provider: m.provider,
+        hexId: m.hexId,
+        category: m.category,
+        termId: m.termId,
+        dateMin: m.dateMin,
+        dateMax: m.dateMax,
+        ageMs: now - (m.startedAt ?? now)
+      }))
+      .sort((a, b) => b.ageMs - a.ageMs);
+    return all.slice(0, 3);
+  };
+
+  const sessionLastActivityAt = new Map(); // sessionId -> ms
+  const touchSession = (sessionId) => {
+    if (!sessionId) return;
+    sessionLastActivityAt.set(sessionId, Date.now());
+  };
   const browseAutoLoadMeta = {
     requestedUrl: browseLoadUrl,
     label: null,
@@ -1173,6 +1534,8 @@ try {
       delete crawlers[sessionId];
       delete targets[sessionId];
       delete processing[sessionId];
+      sessionHasCrawlingStarted.delete(sessionId);
+      inflightTasksBySession.delete(sessionId);
       rawSnapshotRegistry.delete(sessionId);
     };
 
@@ -1204,6 +1567,9 @@ try {
           console.warn("invalid sessionId:", req.sessionId);
           return;
         }
+
+        sessionHasCrawlingStarted.add(req.sessionId);
+        touchSession(req.sessionId);
         const workerOptions = {
           hexGrid: targets[req.sessionId].hex,
           triangles: targets[req.sessionId].triangles,
@@ -1433,6 +1799,7 @@ try {
         }
         crawlers[sessionId] = {};
         processing[sessionId] = 0;
+        sessionHasCrawlingStarted.delete(sessionId);
         const gridMeta = { cellSize: sizeNum, units };
         targets[sessionId] = { sessionId, hex: hexFC, triangles: trianglesFC, categories, splatonePalette, gridMeta };
         socket.emit("hexgrid", { hex: hexFC, triangles: trianglesFC });
@@ -1448,13 +1815,21 @@ try {
 
   const resolvedWorkerFilename = {};
   function resolveWorkerFilename(taskName) {
+    const npmWorkerHref = providerWorkerFilenameRegistry.get(taskName);
+    if (npmWorkerHref) {
+      resolvedWorkerFilename[taskName] ??= npmWorkerHref;
+      return resolvedWorkerFilename[taskName];
+    }
     if (!resolvedWorkerFilename[taskName]) {
       // できれば workers/<taskName>/worker.mjs のように ESM に統一
       const filePath = resolve(__dirname, "providers", taskName, "worker.js");
       if (!existsSync(filePath)) {
         // URL はログ用途のみ。Piscinaへはこの後 href を渡す
         const url = pathToFileURL(filePath).href;
-        throw new Error(`Worker not found for task="${taskName}" at ${url}`);
+        throw new Error(
+          `Worker not found for task="${taskName}" at ${url}\n` +
+          `NPM Provider プラグインの場合は、"<pkg>/worker" が解決できるよう exports を設定してください。`
+        );
       }
       // ★ Piscina には file URL を渡す（href 文字列 or URL オブジェクト）
       resolvedWorkerFilename[taskName] = pathToFileURL(filePath).href;
@@ -1582,32 +1957,143 @@ try {
     };
     }
 
+  function buildHexProgressSnapshot(hexEntry) {
+    const snapshot = {};
+    for (const [categoryName, info] of Object.entries(hexEntry ?? {})) {
+      if (!info || typeof info !== 'object') continue;
+      const crawled = Number(info?.crawled) || 0;
+      const total = Number(info?.total);
+      const progressCompleted = Number(info?.progressCompleted);
+      const progressExpected = Number(info?.progressExpected);
+      snapshot[categoryName] = {
+        crawled,
+        total: Number.isFinite(total) ? total : crawled,
+        progressCompleted: Number.isFinite(progressCompleted) ? progressCompleted : undefined,
+        progressExpected: Number.isFinite(progressExpected) ? progressExpected : undefined,
+        final: info?.final === true
+      };
+    }
+    return snapshot;
+  }
+
+  function decrementProcessing(sessionId) {
+    if (!sessionId) return 0;
+    const current = (processing[sessionId] ?? 0) - 1;
+    const next = Math.max(0, current);
+    processing[sessionId] = next;
+    return next;
+  }
+
+  function markWorkerTermFailed(workerOptions, err, { reason } = {}) {
+    const sessionId = workerOptions?.sessionId;
+    const hexId = workerOptions?.hex?.properties?.hexId;
+    const category = workerOptions?.category;
+    if (!sessionId || hexId == null || !category) {
+      return;
+    }
+
+    try {
+      const termId = workerOptions?.providerOptions?.TermId ?? '__worker_error__';
+      const dateMin = workerOptions?.providerOptions?.DateMin ?? null;
+      const dateMax = workerOptions?.providerOptions?.DateMax ?? null;
+      const message = err?.message || String(err);
+      console.log(`[WARN] worker task forced-final: session=${sessionId} hex=${hexId} category=${category} term=${termId} reason=${reason ?? 'worker failed'} message=${message} dateMin=${dateMin ?? 'n/a'} dateMax=${dateMax ?? 'n/a'}`);
+    } catch {
+      // ignore logging failure
+    }
+    const sessionCrawler = crawlers[sessionId];
+    if (!sessionCrawler) {
+      return;
+    }
+
+    const termId = workerOptions?.providerOptions?.TermId ?? '__worker_error__';
+    const prevTermId = typeof workerOptions?.providerOptions?.PrevTermId === 'string' && workerOptions.providerOptions.PrevTermId.length
+      ? workerOptions.providerOptions.PrevTermId
+      : null;
+    sessionCrawler[hexId] ??= {};
+    sessionCrawler[hexId][category] ??= {};
+    const categoryEntry = sessionCrawler[hexId][category];
+    categoryEntry.terms ??= {};
+    categoryEntry.ids ??= new Set();
+    categoryEntry.items ??= featureCollection([]);
+
+    const termEntry = categoryEntry.terms[termId] ??= {};
+    termEntry.final = true;
+    termEntry.remaining = 0;
+    termEntry.error = {
+      reason: reason ?? 'worker failed',
+      message: err?.message || String(err),
+      code: err?.cause?.code || err?.code || null
+    };
+
+    if (prevTermId && categoryEntry.terms[prevTermId]) {
+      categoryEntry.terms[prevTermId].final = true;
+      categoryEntry.terms[prevTermId].remaining = 0;
+    }
+
+    const hexCategoryRemaining = Object.values(categoryEntry.terms)
+      .reduce((sum, term) => sum + (term?.remaining || 0), 0);
+    categoryEntry.remaining = hexCategoryRemaining;
+
+    const allTermsFinal = Object.values(categoryEntry.terms).every(term => term?.final);
+    categoryEntry.final = allTermsFinal && hexCategoryRemaining === 0;
+  }
+
+  function maybeFinishSession(workerOptions) {
+    const sessionId = workerOptions?.sessionId;
+    if (!sessionId) return;
+    const sessionCrawler = crawlers[sessionId];
+    const target = targets[sessionId];
+    if (!sessionCrawler || !target) return;
+    if (processing[sessionId] === 0 && isSessionFullyComplete(sessionCrawler, target)) {
+      api.emit('splatone:finish', workerOptions);
+    }
+  }
+
   async function runTask_(taskName, data) {
     const { port1, port2 } = new MessageChannel();
     const filename = resolveWorkerFilename(taskName); // ← file URL (href)
     const workerContext = data;
+    let ignoreWorkerMessages = false;
     // named export を呼ぶ場合は { name: "関数名" } を追加
     port1.on('message', async (workerResults) => {
       try {
-        // ここでログ／WebSocket通知／DB書き込みなど何でもOK
-        const rtn = workerResults?.results;
-        if (!rtn) {
-          console.warn('[splatone:start] Received malformed worker payload, skipping chunk.');
+        if (ignoreWorkerMessages) {
           return;
         }
+        // ここでログ／WebSocket通知／DB書き込みなど何でもOK
+        const rtn = workerResults?.results;
         if (!workerContext) {
           console.warn('[splatone:start] Missing worker context, skipping chunk.');
           return;
         }
+
         const workerOptions = workerContext;
         const currentSessionId = workerOptions.sessionId;
-        const currentProcessing = (processing[currentSessionId] ?? 0) - 1;
-        processing[currentSessionId] = Math.max(0, currentProcessing);
+        touchSession(currentSessionId);
+        recordTaskEnd(workerOptions);
+        decrementProcessing(currentSessionId);
         const sessionCrawler = crawlers[currentSessionId];
         if (!sessionCrawler) {
           if (argv.debugVerbose) {
             console.warn(`[session ${currentSessionId}] Received worker result after session disposal. Dropping chunk.`);
           }
+          return;
+        }
+
+        if (!rtn) {
+          console.warn('[splatone:start] Received malformed worker payload.');
+          markWorkerTermFailed(workerOptions, new Error('malformed worker payload'), { reason: 'malformed payload' });
+          io.to(currentSessionId).emit('toast', {
+            text: 'worker結果が不正なため一部タスクを失敗扱いにしました（詳細はサーバログ）',
+            class: 'error'
+          });
+          const hexId = workerOptions?.hex?.properties?.hexId;
+          const category = workerOptions?.category;
+          if (hexId != null && category && sessionCrawler[hexId]) {
+            io.to(currentSessionId).emit('progress', { hexId, currentHex: buildHexProgressSnapshot(sessionCrawler[hexId]) });
+          }
+          maybeFinishSession(workerOptions);
           return;
         }
         if (rtn.error) {
@@ -1644,8 +2130,20 @@ try {
         }
 
         const termEntry = currentHexCategory.terms[rtn.TermId];
-        termEntry.remaining = rtn.remaining;
+        const remainingRaw = Number(rtn.remaining);
+        const remainingValue = Number.isFinite(remainingRaw) ? Math.max(0, remainingRaw) : 0;
         termEntry.final = rtn.final;
+        // provider によって remaining が「APIレスポンス total - 今回取得数」などで、
+        // final=true でも 0 にならないことがある。finish 判定が詰まらないよう final 時は 0 に丸める。
+        termEntry.remaining = rtn.final ? 0 : remainingValue;
+
+        if (typeof rtn.forcedFinalReason === 'string' && rtn.forcedFinalReason.length) {
+          termEntry.forcedFinalReason ??= rtn.forcedFinalReason;
+          if (!termEntry.forcedFinalNotified) {
+            termEntry.forcedFinalNotified = true;
+            console.log(`[WARN] provider forced-final: session=${currentSessionId} hex=${rtn.hexId} category=${rtn.category} term=${rtn.TermId} reason="${rtn.forcedFinalReason}"`);
+          }
+        }
         const progressDelta = Number(rtn.progressDelta);
         if (Number.isFinite(progressDelta)) {
           termEntry.progressCompleted = Math.max(0, (termEntry.progressCompleted ?? 0) + progressDelta);
@@ -1700,7 +2198,8 @@ try {
         const uniqueFeatureCollection = featureCollection(uniqueFeatures);
         sessionCrawler[rtn.hexId][rtn.category].items
           = concatFC(sessionCrawler[rtn.hexId][rtn.category].items, uniqueFeatureCollection);
-        io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex });
+        io.to(currentSessionId).emit('progress', { hexId: rtn.hexId, currentHex: buildHexProgressSnapshot(currentHex) });
+        touchSession(currentSessionId);
         if (!rtn.final) {
           rtn.nextProviderOptions?.forEach((nextProviderOptions) => {
             const workerOptionsClone = {
@@ -1715,14 +2214,32 @@ try {
             };
             api.emit('splatone:start', workerOptionsClone);
           });
-        } else if (
-          processing[currentSessionId] === 0 &&
-          isSessionFullyComplete(sessionCrawler, targets[currentSessionId])
-        ) {
-          api.emit('splatone:finish', workerOptions);
+        } else {
+          maybeFinishSession(workerOptions);
         }
       } catch (err) {
         console.error('[splatone:start] handler failure:', err);
+        try {
+          const workerOptions = workerContext;
+          const currentSessionId = workerOptions?.sessionId;
+          if (currentSessionId) {
+            touchSession(currentSessionId);
+            markWorkerTermFailed(workerOptions, err, { reason: 'result handler failure' });
+            io.to(currentSessionId).emit('toast', {
+              text: `worker結果処理で例外が発生したため一部タスクを失敗扱いにしました: ${err?.message || err}`,
+              class: 'error'
+            });
+            const hexId = workerOptions?.hex?.properties?.hexId;
+            const category = workerOptions?.category;
+            const sessionCrawler = crawlers[currentSessionId];
+            if (hexId != null && category && sessionCrawler?.[hexId]) {
+              io.to(currentSessionId).emit('progress', { hexId, currentHex: sessionCrawler[hexId] });
+            }
+            maybeFinishSession(workerOptions);
+          }
+        } catch (nestedErr) {
+          console.error('[splatone:start] handler failure recovery failed:', nestedErr);
+        }
       }
       /*
       sessionCrawler[rtn.hexId][rtn.category].terms[rtn.TermId].final = rtn.final;
@@ -1765,9 +2282,43 @@ try {
       }
         */
     });
-    const rtn = await piscina.run({ debugVerbose: argv.debugVerbose, port: port2, ...data }, { filename, transferList: [port2] });
-    port1.close();
-    return rtn;
+    const requestTimeoutMsRaw = Number(data?.providerOptions?.RequestTimeoutMs);
+    const requestTimeoutMs = Number.isFinite(requestTimeoutMsRaw) && requestTimeoutMsRaw > 0 ? Math.floor(requestTimeoutMsRaw) : 30_000;
+    const retryMaxAttemptsRaw = Number(data?.providerOptions?.RetryMaxAttempts);
+    const retryMaxAttempts = Number.isFinite(retryMaxAttemptsRaw) && retryMaxAttemptsRaw > 0
+      ? Math.max(1, Math.min(6, Math.floor(retryMaxAttemptsRaw)))
+      : 2;
+    const hardTimeoutMs = Math.max(15_000, Math.min(10 * 60_000, (requestTimeoutMs * retryMaxAttempts) + 15_000));
+
+    const abortController = new AbortController();
+    let timeoutTimer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        ignoreWorkerMessages = true;
+        try {
+          abortController.abort(new Error(`piscina.run timed out after ${hardTimeoutMs}ms`));
+        } catch {
+          // ignore
+        }
+        try { port1.close(); } catch { }
+        reject(new Error(`piscina.run timed out after ${hardTimeoutMs}ms`));
+      }, hardTimeoutMs);
+    });
+
+    const piscinaPromise = piscina.run(
+      { debugVerbose: argv.debugVerbose, port: port2, ...data },
+      { filename, transferList: [port2], signal: abortController.signal }
+    );
+    // Prevent late rejections (after timeout) from becoming unhandled.
+    piscinaPromise.catch(() => { });
+
+    try {
+      const rtn = await Promise.race([piscinaPromise, timeoutPromise]);
+      return rtn;
+    } finally {
+      clearTimeout(timeoutTimer);
+      try { port1.close(); } catch { }
+    }
   }
   const runTask = flickrLimiter.wrap(runTask_);
 
@@ -1779,14 +2330,176 @@ try {
   });
 
   if (!browseMode) {
+    if (argv.debugVerbose || argv.watchdog) {
+      const WATCHDOG_INTERVAL_MS = 10_000;
+      const WATCHDOG_STALL_MS = 30_000;
+      setInterval(() => {
+        try {
+          for (const [sessionId, inflight] of Object.entries(processing)) {
+            const count = Number(inflight) || 0;
+            const last = sessionLastActivityAt.get(sessionId) ?? null;
+            const age = last ? (Date.now() - last) : null;
+            const crawler = crawlers[sessionId];
+            const target = targets[sessionId];
+            if (!crawler || !target) {
+              continue;
+            }
+            if (!sessionHasCrawlingStarted.has(sessionId)) {
+              continue;
+            }
+            if (count > 0 && age != null && age >= WATCHDOG_STALL_MS) {
+              console.warn(`[watchdog] session=${sessionId} processing=${count} stalledForMs=${age}`);
+              const first = findFirstIncomplete(crawler, target);
+              if (first) {
+                console.warn('[watchdog] firstIncomplete:', first);
+                const samples = getInflightSamples(sessionId, { hexId: first?.hexId ?? null, category: first?.categoryKey ?? null });
+                if (samples.length) {
+                  console.warn('[watchdog] inflightSample:', samples);
+                }
+              }
+            }
+            if (count === 0) {
+              const complete = isSessionFullyComplete(crawler, target);
+              if (!complete && age != null && age >= WATCHDOG_STALL_MS) {
+                const first = findFirstIncomplete(crawler, target);
+                console.warn(`[watchdog] session=${sessionId} processing=0 but not complete`);
+                if (first) {
+                  console.warn('[watchdog] firstIncomplete:', first);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[watchdog] failure:', err);
+        }
+      }, WATCHDOG_INTERVAL_MS).unref?.();
+    }
+
+    if (argv['server-progress']) {
+      const PROGRESS_INTERVAL_MS = 10_000;
+      setInterval(() => {
+        try {
+          for (const [sessionId, crawler] of Object.entries(crawlers)) {
+            const target = targets[sessionId];
+            if (!crawler || !target) continue;
+            if (!sessionHasCrawlingStarted.has(sessionId)) continue;
+
+            const inflight = Number(processing[sessionId]) || 0;
+            // UI(progress bar)と同じ計算（hexごとに cat の progress/expected を合算して aggregated.crawled/aggregated.total）
+            let aggregatedCrawled = 0;
+            let aggregatedTotal = 0;
+            for (const hexEntry of Object.values(crawler ?? {})) {
+              if (!hexEntry || typeof hexEntry !== 'object') continue;
+              let hexCrawled = 0;
+              let hexExpected = 0;
+              for (const cat of Object.values(hexEntry ?? {})) {
+                if (!cat || typeof cat !== 'object') continue;
+                const catCrawled = cat?.ids instanceof Set
+                  ? cat.ids.size
+                  : Number(cat?.crawled) || 0;
+                const catProgress = Number.isFinite(cat?.progressCompleted)
+                  ? Number(cat.progressCompleted)
+                  : catCrawled;
+                const catExpected = Number.isFinite(cat?.progressExpected)
+                  ? Number(cat.progressExpected)
+                  : (Number.isFinite(cat?.total) ? Number(cat.total) : catProgress);
+                hexCrawled += catProgress;
+                hexExpected += Math.max(catExpected, catProgress);
+              }
+              const safeTotal = Math.max(1, hexExpected);
+              aggregatedCrawled += hexCrawled;
+              aggregatedTotal += safeTotal;
+            }
+            const percent = aggregatedTotal === 0
+              ? 0
+              : Math.max(0, Math.min(1, aggregatedCrawled / Math.max(1, aggregatedTotal)));
+
+            // カテゴリ別に「何枚集まっているか」（hex合算。hex間の重複はそのまま）
+            const categoryKeys = Object.keys(target?.categories ?? {});
+            const categoryCounts = Object.fromEntries(categoryKeys.map((k) => [k, 0]));
+            for (const hexEntry of Object.values(crawler ?? {})) {
+              if (!hexEntry || typeof hexEntry !== 'object') continue;
+              for (const categoryKey of categoryKeys) {
+                const cat = hexEntry?.[categoryKey];
+                if (!cat || typeof cat !== 'object') continue;
+                const catCrawled = cat?.ids instanceof Set
+                  ? cat.ids.size
+                  : Number(cat?.crawled) || 0;
+                categoryCounts[categoryKey] = (categoryCounts[categoryKey] || 0) + catCrawled;
+              }
+            }
+
+            const summary = summarizeCrawlerProgress(crawler, target);
+            const expected = Number(summary?.totals?.expected) || 0;
+            const completed = Number(summary?.totals?.progressCompleted) || 0;
+            const remaining = Number(summary?.totals?.remaining) || 0;
+            const complete = isSessionFullyComplete(crawler, target);
+            const last = sessionLastActivityAt.get(sessionId) ?? null;
+            const age = last ? (Date.now() - last) : null;
+
+            const cats = categoryKeys
+              .map((k) => `${k}=${categoryCounts[k] || 0}`)
+              .join(',');
+
+            let line = `[server-progress] session=${sessionId} ${(percent * 100).toFixed(1)}% complete=${complete} processing=${inflight} cats=${cats} completed=${completed}/${expected} remaining=${remaining}`;
+            if (age != null) {
+              line += ` lastActivityMsAgo=${age}`;
+            }
+
+            if (!complete) {
+              const first = findFirstIncomplete(crawler, target);
+              if (first?.hexId != null || first?.reason) {
+                const hexId = first?.hexId ?? 'n/a';
+                const categoryKey = first?.categoryKey ?? 'n/a';
+                line += ` firstIncomplete=${hexId}:${categoryKey}`;
+              }
+            }
+
+            if (inflight > 0) {
+              const sample = getInflightSamples(sessionId)?.[0];
+              if (sample) {
+                line += ` inflightTop=${JSON.stringify(sample)}`;
+              }
+            }
+
+            console.log(line);
+          }
+        } catch (err) {
+          console.error('[server-progress] failure:', err);
+        }
+      }, PROGRESS_INTERVAL_MS).unref?.();
+    }
+
     await subscribe('splatone:start', async workerOptions => {
       const currentSessionId = workerOptions.sessionId;
       processing[currentSessionId] = (processing[currentSessionId] ?? 0) + 1;
+      sessionHasCrawlingStarted.add(currentSessionId);
+      touchSession(currentSessionId);
       const safeOptions = JSON.parse(JSON.stringify(workerOptions, (_, value) => {
         if (typeof value === 'function') return undefined;
         return value;
       }));
-      runTask(safeOptions.provider, safeOptions);
+
+      recordTaskStart(safeOptions);
+
+      runTask(safeOptions.provider, safeOptions).catch((err) => {
+        console.error('[splatone:start] worker execution failed:', err);
+        recordTaskEnd(safeOptions);
+        decrementProcessing(currentSessionId);
+        touchSession(currentSessionId);
+        markWorkerTermFailed(safeOptions, err, { reason: 'piscina.run failed' });
+        io.to(currentSessionId).emit('toast', {
+          text: `worker実行に失敗しました: ${err?.message || err}`,
+          class: 'error'
+        });
+        const hexId = safeOptions?.hex?.properties?.hexId;
+        const category = safeOptions?.category;
+        const sessionCrawler = crawlers[currentSessionId];
+        if (sessionCrawler && hexId != null && category && sessionCrawler[hexId]) {
+          io.to(currentSessionId).emit('progress', { hexId, currentHex: buildHexProgressSnapshot(sessionCrawler[hexId]) });
+        }
+        maybeFinishSession(safeOptions);
+      });
     });
 
     await subscribe('splatone:finish', async workerOptions => {

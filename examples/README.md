@@ -1,195 +1,232 @@
-# Splatone Examples Viewer
+# Examples
 
-このページでは実行済み可視化例を掲載している。
+このディレクトリは、Splatone の実行例（結果ファイル）と、拡張用のプラグイン例（Provider/Visualizer）をまとめたものです。
 
-- 問い合わせコマンド: APIKEYを差し替える事でご自身でクローリングから行えます。
-- 結果閲覧コマンド: すでにクローリングした結果を閲覧するコマンドです。APPIKEYは必要ありません。
-- 結果スクリーンショット: 可視化結果のスクリーンショットです。インタラクティブな操作はできません。
+## 含まれるもの
 
-## Visualizer比較用コマンドと結果 - 東京タワーとスカイツリー
+- `bundle-providers/`
+  - 可視化結果のサンプル（`tower-*.json`）と、その閲覧/再現コマンド
+  - 詳細: [bundle-providers/README.md](bundle-providers/README.md)
+- `plugins/`
+  - NPM 配布を想定した Provider/Visualizer プラグインの最小サンプル
+  - Provider/Visualizerプラグインの解説はこのページに記載しています。
 
-### Bulky Cluster
+## プラグイン開発者向け（Provider/Visualizer）
 
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-bulky \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+Splatone は、NPM パッケージとして配布された Provider / Visualizer を `crawler` 実行時に `--plugin` で明示ロードできます。
+
+- `--plugin <pkg>`: プラグインの「パッケージ名」を指定（複数可）
+- Provider を使う: `-p/--provider <id>`
+- Visualizer を使う: `--vis-<id>`
+- npx 前提の追加導入: `npx -p <pkg>`（インストールせず一時的に利用）
+
+### Provider プラグイン要件
+
+- 推奨パッケージ名: `splatone-provider-<id>`
+- ESM を推奨: `"type": "module"`
+- エントリ: default export で Provider クラスを公開
+  - `ProviderBase` を継承（`import { ProviderBase } from 'splatone/lib/ProviderBase.js'`）
+  - `static id = '<id>'` を設定（またはコンストラクタで `this.id` を設定）
+- worker（必須）:
+  - Piscina で実行される処理を同梱し、`<pkg>/worker` として解決できるようにする
+  - `package.json` の `exports` に `"./worker": "./worker.js"` を含める（推奨）
+
+最小の `package.json` 例:
+
+```json
+{
+  "name": "splatone-provider-hello",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./worker": "./worker.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-bulky.json"
+### Visualizer プラグイン要件
+
+- 推奨パッケージ名: `splatone-visualizer-<id>`
+- エントリ: default export で Visualizer クラスを公開
+  - `VisualizerBase` を継承（`import { VisualizerBase } from 'splatone/lib/VisualizerBase.js'`）
+  - `static id = '<id>'` を設定（またはコンストラクタで `this.id` を設定）
+- Web 側エントリ（推奨）:
+  - ブラウザ上で描画する `web.js` を同梱し、`<pkg>/web` として解決できるようにする
+  - `package.json` の `exports` に `"./web": "./web.js"` を含める（推奨）
+- 任意: `public/` を同梱すると、`/visualizer/<id>/public/*` として配信されます
+
+最小の `package.json` 例:
+
+```json
+{
+  "name": "splatone-visualizer-simple",
+  "type": "module",
+  "exports": {
+    ".": "./node.js",
+    "./web": "./web.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}
 ```
 
-- 結果スクリーンショット
+### ローカルでの動作確認（このリポジトリ内のサンプル）
 
-![](tower-bulky.png)
+#### サンプルの場所
 
-### Marker Cluster
+- Provider サンプル: [plugins/splatone-provider-hello](plugins/splatone-provider-hello)
+- Visualizer サンプル: [plugins/splatone-visualizer-simple](plugins/splatone-visualizer-simple)
 
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-marker-cluster \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+#### おすすめ手順（`npm pack` → `npx -p <tgz>`）
+
+npm のバージョン差を避けるため、まず `.tgz` に固めてから `npx -p` で読み込みます。
+
+PowerShell 例（Provider）:
+
+```powershell
+Push-Location .\examples\plugins\splatone-provider-hello
+npm pack
+$pkg = (Get-ChildItem -Filter "splatone-provider-hello-*.tgz" | Select-Object -First 1).Name
+Pop-Location
+
+npx -y -p splatone@latest -p .\examples\plugins\splatone-provider-hello\$pkg crawler `
+  --plugin splatone-provider-hello `
+  -p hello `
+  -k "A=a|B=b" `
+  --vis-bulky
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-cluster.json"
+PowerShell 例（Visualizer）:
+
+```powershell
+Push-Location .\examples\plugins\splatone-visualizer-simple
+npm pack
+$pkg = (Get-ChildItem -Filter "splatone-visualizer-simple-*.tgz" | Select-Object -First 1).Name
+Pop-Location
+
+npx -y -p splatone@latest -p .\examples\plugins\splatone-visualizer-simple\$pkg crawler `
+  --plugin splatone-visualizer-simple `
+  -p flickr `
+  -k "canal,river|street" `
+  --vis-simple `
+  --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-- 結果スクリーンショット
+補足:
 
-![](tower-cluster.png)
+- `--plugin` は「ロード」だけを行います。実際に使う Provider/Visualizer は `-p` や `--vis-*` で選びます。
+- Provider プラグインは worker が必須です。`exports` の `./worker` を忘れると実行時にエラーになります。
 
+## npm に publish して利用する例
 
+ここでは「自作プラグインを npm に publish し、利用者が npx だけで使う」最短手順を示します。
 
-### Voronoi
+### 1) publish の前提
 
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-voronoi \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+- npm アカウントを作成し、ローカルでログインします
+
+```powershell
+npm login
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-voronoi.json"
+- パッケージ名は一意である必要があります（例: `splatone-provider-myorg-foo` のようにプレフィックスを付けるのがおすすめ）
+- スコープ付き（例: `@myorg/splatone-provider-foo`）で公開する場合は、初回 publish で `--access public` が必要なことがあります
+
+### 2) Provider プラグインを publish
+
+Provider 側は `exports` に `./worker` を含めるのが必須です。
+
+`package.json`（例）
+
+```json
+{
+  "name": "splatone-provider-foo",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./worker": "./worker.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}
 ```
 
-- 結果スクリーンショット
+publish（例）
 
-![](tower-voronoi.png)
+```powershell
+# プラグインのディレクトリで
+npm version patch
+npm publish
 
-
-
-### Pie Charts
-
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-pie-charts \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+# スコープ付き & public の例
+# npm publish --access public
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-pie.json"
+### 3) Visualizer プラグインを publish
+
+Visualizer 側は Web エントリとして `exports` に `./web` を含めるのを推奨します。
+
+`package.json`（例）
+
+```json
+{
+  "name": "splatone-visualizer-bar",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./node.js",
+    "./web": "./web.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}
 ```
 
-- 結果スクリーンショット
+publish（例）
 
-![](tower-pie.png)
-
-
-### Majority Hex
-
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-majority-hex \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```powershell
+npm version patch
+npm publish
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-hex.json"
+### 4) 利用者が npx で使う（インストール不要）
+
+利用者は `--plugin` でプラグイン名を渡しつつ、`npx -p` でそのパッケージ自体も同時に取得します。
+
+Provider プラグイン利用例
+
+```powershell
+npx -y -p splatone@latest -p splatone-provider-foo crawler `
+  --plugin splatone-provider-foo `
+  -p foo `
+  -k "A=a|B=b" `
+  --vis-bulky
 ```
 
-- 結果スクリーンショット
+Visualizer プラグイン利用例
 
-![](tower-hex.png)
-
-### Majority Hex (Hexapartite)
-
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-majority-hex --v-majority-hex-Hexapartite \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+```powershell
+npx -y -p splatone@latest -p splatone-visualizer-bar crawler `
+  --plugin splatone-visualizer-bar `
+  -p flickr `
+  -k "canal,river|street" `
+  --vis-bar `
+  --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-hexapartite.json"
+Provider + Visualizer を同時に使う例
+
+```powershell
+npx -y -p splatone@latest -p splatone-provider-foo -p splatone-visualizer-bar crawler `
+  --plugin splatone-provider-foo --plugin splatone-visualizer-bar `
+  -p foo `
+  -k "A=a|B=b" `
+  --vis-bar
 ```
-
-- 結果スクリーンショット
-
-![](tower-hexapartite.png)
-
-
-### Heatmap
-
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-heat \
---v-heat-Radius=250 \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-```
-
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-heat.json"
-```
-
-- 結果スクリーンショット
-
-![](tower-heat.png)
-
-
-
-### DBSCAN
-
-- 問い合わせコマンド
-```shell
-npx -y -p splatone@latest crawler -p flickr \
--k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
---vis-dbscan \
---v-dbscan-MinPts=30 --v-dbscan-Eps=1 \
---ui-cell-size 1 --ui-units kilometers \
---ui-bbox 139.63829,35.568818,139.950027,35.739825 \
---p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-```
-
-- 結果閲覧コマンド
-```shell
-npx -y -p splatone@latest browse \
---browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-dbscan.json"
-```
-
-- 結果スクリーンショット
-
-![](tower-dbscan.png)

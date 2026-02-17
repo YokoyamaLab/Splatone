@@ -71,6 +71,20 @@
     "terminal.integrated.env.windows": {
         "PATH": "C:\\Program Files\\Inkscape\\bin;${env:PATH}"
     },
+    "chat.tools.terminal.autoApprove": {
+        "/^node crawler\\.js --help \\| Select-String -Pattern \"RetryMaxAttempts\\|RetryBaseDelayMs\\|RequestTimeoutMs\" -Context 0,1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node crawler\\.js --help > \\$null; if \\(\\$LASTEXITCODE -ne 0\\) \\{ exit \\$LASTEXITCODE \\}$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node -e \"import\\('\\./providers/flickr/worker\\.js'\\)\\.then\\(\\(\\)=>console\\.log\\('ok'\\)\\)\\.catch\\(e=>\\{console\\.error\\(e\\); process\\.exit\\(1\\);\\}\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
     /*
     "latex-workshop.latex.tools": [
         {

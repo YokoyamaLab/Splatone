@@ -1,0 +1,14 @@
+{
+  "name": "splatone-visualizer-simple",
+  "version": "0.1.0",
+  "description": "Example Splatone Visualizer plugin (simple)",
+  "type": "module",
+  "main": "./node.js",
+  "exports": {
+    ".": "./node.js",
+    "./web": "./web.js"
+  },
+  "peerDependencies": {
+    "splatone": "*"
+  }
+}

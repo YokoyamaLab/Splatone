@@ -135,10 +135,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-.API_KEY.*
-debug.*
-result.*
-
 tmp/
 
 # Created by https://www.toptal.com/developers/gitignore/api/tex
@@ -458,6 +454,9 @@ TSWLatexianTemp*
 
 
 # Project-specific: do not publish assets used only for development
+.API_KEY.*
+debug.*
+result.*
 assets/
 examples/
 publications/

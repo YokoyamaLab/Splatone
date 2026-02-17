@@ -1,4 +1,3 @@
-import { createFlickr } from "flickr-sdk"
 import { point, featureCollection } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { toUnixSeconds } from '#lib/splatone';
@@ -25,12 +24,30 @@ function escapeHtml(input = '') {
         .replace(/'/g, '&#39;');
 }
 
-async function fetchWithRetry(fetcher, { maxAttempts = 4, baseDelayMs = 500 } = {}) {
+async function fetchWithRetry(fetcher, { timeoutMs, maxAttempts = 2, baseDelayMs = 500 } = {}) {
+    const timeoutMsValue = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+        ? Math.floor(Number(timeoutMs))
+        : null;
     let attempt = 0;
     let lastError = null;
     while (attempt < maxAttempts) {
         try {
-            return await fetcher();
+            if (!timeoutMsValue) {
+                return await fetcher({ signal: undefined });
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => {
+                try {
+                    controller.abort();
+                } catch {
+                    // ignore
+                }
+            }, timeoutMsValue);
+            try {
+                return await fetcher({ signal: controller.signal });
+            } finally {
+                clearTimeout(timer);
+            }
         } catch (err) {
             lastError = err;
             const transient = isTransientNetworkError(err);
@@ -48,11 +65,42 @@ async function fetchWithRetry(fetcher, { maxAttempts = 4, baseDelayMs = 500 } = 
 
 function isTransientNetworkError(err) {
     const code = err?.cause?.code ?? err?.code;
+    const status = err?.status;
+    if (status === 429) return true;
+    if (status && [500, 502, 503, 504].includes(status)) return true;
+    if (code === 429) return true;
     if (!code && typeof err?.message === 'string' && err.message.includes('fetch failed')) {
         return true;
     }
+    if (err?.name === 'AbortError') return true;
+    if (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted')) return true;
     const transientCodes = new Set(['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE']);
     return transientCodes.has(code);
+}
+
+async function callFlickrRest(method, params, { apiKey, signal } = {}) {
+    const endpoint = 'https://api.flickr.com/services/rest/';
+    const searchParams = new URLSearchParams({
+        method,
+        api_key: apiKey,
+        format: 'json',
+        nojsoncallback: '1',
+        ...Object.fromEntries(Object.entries(params ?? {}).map(([k, v]) => [k, String(v)]))
+    });
+    const url = `${endpoint}?${searchParams.toString()}`;
+    const res = await fetch(url, { method: 'GET', signal });
+    if (!res.ok) {
+        const err = new Error(`Flickr HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+    const json = await res.json();
+    if (json?.stat && json.stat !== 'ok') {
+        const err = new Error(json?.message || 'Flickr API failure');
+        err.code = json?.code ?? null;
+        throw err;
+    }
+    return json;
 }
 
 export default async function ({
@@ -67,7 +115,7 @@ export default async function ({
     providerOptions,
     sessionId
 }) {
-    debugVerbose = true;
+    debugVerbose = Boolean(debugVerbose);
 
     const respond = (payload) => {
         const safePayload = JSON.parse(JSON.stringify(payload));
@@ -75,11 +123,14 @@ export default async function ({
     };
 
     try {
-        const { flickr } = createFlickr(providerOptions["APIKEY"]);
+        let forcedFinalReason = null;
         if (!providerOptions.TermId) {
             //初期TermId
             providerOptions.TermId = 'a';
         }
+        const prevTermId = typeof providerOptions?.PrevTermId === 'string' && providerOptions.PrevTermId.length
+            ? providerOptions.PrevTermId
+            : null;
         const baseParams = {
             bbox: bbox.join(','),
             tags: tags,
@@ -89,12 +140,19 @@ export default async function ({
         baseParams[providerOptions["DateMode"] == "upload" ? 'max_upload_date' : 'max_taken_date'] = providerOptions["DateMax"];
         baseParams[providerOptions["DateMode"] == "upload" ? 'min_upload_date' : 'min_taken_date'] = providerOptions["DateMin"];
         //console.log("[baseParams]",baseParams);
-        const res = await fetchWithRetry(() => flickr("flickr.photos.search", {
+        const requestTimeoutMs = Math.max(1_000, Math.min(5 * 60_000, Math.floor(Number(providerOptions?.RequestTimeoutMs ?? 30_000))));
+        const retryMaxAttemptsRaw = Number(providerOptions?.RetryMaxAttempts ?? 2);
+        const retryBaseDelayMsRaw = Number(providerOptions?.RetryBaseDelayMs ?? 500);
+        const retryMaxAttempts = Number.isFinite(retryMaxAttemptsRaw) ? Math.max(1, Math.min(6, Math.floor(retryMaxAttemptsRaw))) : 2;
+        const retryBaseDelayMs = Number.isFinite(retryBaseDelayMsRaw) ? Math.max(0, Math.min(30_000, Math.floor(retryBaseDelayMsRaw))) : 500;
+        const apiKey = providerOptions["APIKEY"];
+        const fetcher = ({ signal } = {}) => callFlickrRest('flickr.photos.search', {
             ...baseParams,
             has_geo: 1,
             per_page: 250,
             page: 1,
-        }));
+        }, { apiKey, signal });
+        const res = await fetchWithRetry(fetcher, { timeoutMs: requestTimeoutMs, maxAttempts: retryMaxAttempts, baseDelayMs: retryBaseDelayMs });
     //console.log(res);
     const ids = [];
     const authors = {};
@@ -148,46 +206,66 @@ export default async function ({
             console.log("DateMode ERROR")
             console.log(res)
         }
-        let next_max_date
-            = res.photos.photo.length > 0
-                ? (minDate) - (minDate == maxDate ? 1 : 0)
-                : null;
-        const window = res.photos.photo.length == 0 ? 0 : maxDate - minDate;
-        if (Object.keys(authors).length == 1 && res.photos.photo.length >= 250 && window < 60 * 60) {
-            const skip = window < 0 ? Math.abs(window) * 1.1 : (window < 5 ? 0.1 : 12);
-            if (debugVerbose) {
-                console.warn("[Warning]", (window < 0 ? "[[[Negative Time Window Error]]]" : ""), `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
-            }
-            next_max_date -= 60 * 60 * skip;
-        }
-        if (providerOptions["Haste"] && res.photos.pages > 4) {
-            //結果の最大・最小を2分割
-            const mid = Math.round(((next_max_date - providerOptions.DateMin) / 2) + providerOptions.DateMin);
-            if (debugVerbose) {
-                console.log(`Split(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, mid, next_max_date);
-            }
-            nextProviderOptionsDelta.push({
-                'DateMax': next_max_date,
-                'DateMin': mid,
-                'TermId': providerOptions.TermId + 'a'
-            });
-            nextProviderOptionsDelta.push({
-                'DateMax': mid,
-                'DateMin': providerOptions.DateMin,
-                'TermId': providerOptions.TermId + 'b'
-            });
-        } else if (res.photos.photo.length < res.photos.total) {
-            if (debugVerbose) {
-                console.log(`Continue[${res.photos.pages} pages](${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, next_max_date);
-            }
-            nextProviderOptionsDelta.push({
-                'DateMax': next_max_date,
-                'DateMin': providerOptions.DateMin,
-            });
+        const minDateNum = Number(minDate);
+        const maxDateNum = Number(maxDate);
+        const dateMinLimit = Number(providerOptions?.DateMin);
+        const prevDateMax = Number(providerOptions?.DateMax);
+        if (!Number.isFinite(minDateNum) || !Number.isFinite(maxDateNum)) {
+            forcedFinalReason = 'invalid date fields (min/max date is NaN)';
+            console.log(`[WARN] [flickr] forcing final: reason="${forcedFinalReason}" hex=${hex.properties.hexId} category=${category} term=${providerOptions.TermId}`);
         } else {
-            //final
-            if (debugVerbose) {
-                console.log(`Final(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, next_max_date);
+            let next_max_date
+                = res.photos.photo.length > 0
+                    ? (minDateNum) - (minDateNum === maxDateNum ? 1 : 0)
+                    : null;
+            const window = res.photos.photo.length == 0 ? 0 : (maxDateNum - minDateNum);
+            if (Object.keys(authors).length == 1 && res.photos.photo.length >= 250 && window < 60 * 60) {
+                const skip = window < 0 ? Math.abs(window) * 1.1 : (window < 5 ? 0.1 : 12);
+                if (debugVerbose) {
+                    console.warn("[Warning]", (window < 0 ? "[[[Negative Time Window Error]]]" : ""), `High posting activity detected for ${Object.keys(authors)} within ${window} s. the crawler will skip the next ${skip} hours.`);
+                }
+                next_max_date -= 60 * 60 * skip;
+            }
+
+            // 進捗しない（DateMax が減らない / DateMin を下回る / NaN）場合は無限ループ回避のため final にする
+            const nextMaxNum = Number(next_max_date);
+            const noProgress = !Number.isFinite(nextMaxNum)
+                || (Number.isFinite(prevDateMax) && nextMaxNum >= prevDateMax)
+                || (Number.isFinite(dateMinLimit) && nextMaxNum <= dateMinLimit);
+            if (noProgress) {
+                forcedFinalReason = `non-progressing window (nextMax=${nextMaxNum}, prevMax=${prevDateMax}, minLimit=${dateMinLimit})`;
+                console.log(`[WARN] [flickr] forcing final: reason="${forcedFinalReason}" hex=${hex.properties.hexId} category=${category} term=${providerOptions.TermId}`);
+            } else if (providerOptions["Haste"] && res.photos.pages > 4) {
+                //結果の最大・最小を2分割
+                const mid = Math.round(((nextMaxNum - providerOptions.DateMin) / 2) + providerOptions.DateMin);
+                if (debugVerbose) {
+                    console.log(`Split(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, mid, nextMaxNum);
+                }
+                nextProviderOptionsDelta.push({
+                    'DateMax': nextMaxNum,
+                    'DateMin': mid,
+                    'TermId': providerOptions.TermId + 'a',
+                    'PrevTermId': providerOptions.TermId
+                });
+                nextProviderOptionsDelta.push({
+                    'DateMax': mid,
+                    'DateMin': providerOptions.DateMin,
+                    'TermId': providerOptions.TermId + 'b',
+                    'PrevTermId': providerOptions.TermId
+                });
+            } else if (res.photos.photo.length < res.photos.total) {
+                if (debugVerbose) {
+                    console.log(`Continue[${res.photos.pages} pages](${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, nextMaxNum);
+                }
+                nextProviderOptionsDelta.push({
+                    'DateMax': nextMaxNum,
+                    'DateMin': providerOptions.DateMin,
+                });
+            } else {
+                //final
+                if (debugVerbose) {
+                    console.log(`Final(${hex.properties.hexId} - ${category} - ${providerOptions.TermId}):`, providerOptions.DateMin, nextMaxNum);
+                }
             }
         }
     }
@@ -199,10 +277,12 @@ export default async function ({
                 category,
                 nextProviderOptions: nextProviderOptionsDelta.map(e => { return { ...providerOptions, ...e } }),
                 TermId: providerOptions.TermId,
-                remaining:  res.photos.total - res.photos.photo.length,
+                prevTermId,
+                remaining:  Number(res.photos.total) - res.photos.photo.length,
                 outside: outside,
                 ids,
-                final: nextProviderOptionsDelta.length == 0
+                final: nextProviderOptionsDelta.length == 0,
+                forcedFinalReason
             }
         };
 
