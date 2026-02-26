@@ -4,7 +4,7 @@
 - [Splatone - Multi-layer Composite Heatmap](#splatone---multi-layer-composite-heatmap)
   - [概要](#概要)
   - [Change Log](#change-log)
-    - [v0.0.23 → v0.0.34](#v0023--v0034)
+    - [v0.0.33 → v0.0.35](#v0033--v0035)
 - [使い方](#使い方)
   - [最小コマンド例](#最小コマンド例)
   - [NPMプラグイン (--plugin)](#npmプラグイン---plugin)
@@ -86,7 +86,7 @@ SNSのジオタグ付きポストをキーワードに基づいて収集する�
 
 ## <a name='ChangeLog'></a>Change Log
 
-### <a name='v0.0.33v0.0.34'></a>v0.0.23 → v0.0.34
+### <a name='v0.0.33v0.0.35'></a>v0.0.33 → v0.0.35
 - Provider/Visualizer の第三者開発対応
 
 [これ以前のログ](CHANGELOG.md)

@@ -83,6 +83,14 @@
         "/^node -e \"import\\('\\./providers/flickr/worker\\.js'\\)\\.then\\(\\(\\)=>console\\.log\\('ok'\\)\\)\\.catch\\(e=>\\{console\\.error\\(e\\); process\\.exit\\(1\\);\\}\\)\"$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^pdflatex -interaction=nonstopmode -halt-on-error -output-directory publication publication/main\\.tex$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^uplatex -interaction=nonstopmode -halt-on-error -output-directory publication publication/main\\.tex$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     },
     /*

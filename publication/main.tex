@@ -811,8 +811,36 @@ Web UIは`public/`および`views/`以下に実装されており，サーバ側
 
 \subsection{Provider Extension Mechanism}
 \label{sec:providerextension}
+Splatone Crawlerはデータ収集部をProviderとしてモジュール化し，コアのクロール制御（Hex分割，進捗管理，結果バンドル化）と，各サービス固有のAPI呼び出し・正規化処理を分離している．
+Providerは基底クラス \texttt{ProviderBase} を継承し，少なくとも \texttt{static version} を持つクラスとして実装する．ロード時には \texttt{lib/providerLoader.js} がProviderディレクトリ（既定では \texttt{providers/}）直下の各サブディレクトリから \texttt{index.js} を動的importし，メタ情報（ID，バージョン，依存関係）を取得してから，依存関係（\texttt{static dependencies}）に基づくトポロジカルソートで初期化順序を決定する．これにより，認証や共通ユーティリティ等のProvider間依存を明示的に扱える．
+
+第三者によるProvider追加は，(1) リポジトリ内の \texttt{providers/<id>/} に実装を配置する方法，または (2) NPMパッケージとして配布し \texttt{--plugin} オプションで明示ロードする方法の2通りを提供する．後者の場合，\texttt{splatone-provider-<id>} の命名規約を推奨し，パッケージのdefault exportとしてProviderクラスを公開する．
+
+本システムではProvider処理をワーカスレッドで実行するため，NPM配布Providerはワーカエントリも同梱する必要がある．具体的には \texttt{"<pkg>/worker"}（例：\texttt{exports} に \texttt{"./worker": "./worker.js"} を追加）として解決可能な形で提供する．これにより，ホスト側はProvider本体とワーカ実装を対応づけ，Piscinaによる並列実行へ安全に組み込める．
+
+\begin{commandline}
+npx -y -p splatone@latest crawler \
+  --plugin splatone-provider-foo \
+  -p foo -k "..." --vis-bulky
+\end{commandline}
+
 \subsection{Visualization Extension Mechanism}
 \label{sec:visualizationextension}
+可視化部も同様にVisualizerとしてモジュール化し，サーバ側の前処理とブラウザ側の描画処理を分離して追加できる．リポジトリ同梱Visualizerは \texttt{visualizer/<id>/node.js}（サーバ側クラス）と \texttt{visualizer/<id>/web.js}（ブラウザ側スクリプト）を基本とし，必要に応じて \texttt{visualizer/<id>/public/} 以下に補助的な静的アセットを配置する．
+
+第三者Visualizerの配布もNPMパッケージとして行える．\texttt{--plugin} で \texttt{splatone-visualizer-<id>} を明示ロードすると，ホストはdefault exportからVisualizerクラスを取得し，ブラウザ側エントリ（\texttt{"<pkg>/web"} またはパッケージ直下の \texttt{web.js}）を解決して配信対象に登録する．
+
+サードパーティープラグインの安全性と安定性の観点から，サーバはVisualizerディレクトリ内の \texttt{node.js} への直接アクセスを遮断し，必要な \texttt{web.js} と \texttt{/public} 配下のみをホワイトリスト方式で配信する．これにより，プラグインの内部実装（サーバ側クラス）を不用意に外部公開せずに，ブラウザ側に必要な最小限の資産だけを提供できる．
+
+\begin{commandline}
+npx -y -p splatone@latest crawler \
+  --plugin splatone-visualizer-foo \
+  --vis-foo -p flickr -k "..."
+\end{commandline}
+
+また，Visualizerはオプションスキーマを宣言することで，CLI引数（\texttt{--v-<id>-*}）を自動的に追加できる．これにより第三者Visualizerであっても，コアを変更せずにパラメータ調整UI（CLIおよびブラウザ）と統合できる．
+
+以上の設計により，データソース（Provider）と表現（Visualizer）を独立に追加・交換でき，特定ドメイン（例：イベント，観光，交通）に特化した収集ロジックや可視化表現をコミュニティベースで拡張できる．一方で，プラグインはホストプロセスと同等の実行権限で動作するため，利用者は信頼できる配布元のプラグインを選択し，実験の再現性確保のために利用したプラグイン名とバージョン（およびCLI引数）を記録する必要がある．
 
 
 \section{Use Cases}
