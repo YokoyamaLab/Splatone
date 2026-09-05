@@ -1,18 +1,30 @@
-# Splatone Preprint (LaTeX Skeleton)
+# Splatone implementation paper — SoftwareX format
 
-このディレクトリには、Splatone に関する preprint 論文の LaTeX スケルトンが含まれています。
+This directory contains the Splatone implementation paper prepared with the Elsevier `elsarticle` class used for SoftwareX submissions.
 
-## 構成
+## Files
 
-- `main.tex` : 論文本体（セクション構成のみ）
-- `references.bib` : 文献データベース（例を1件だけ記載）
-- `figures/` : 図表用のディレクトリ
+- `main.tex` — SoftwareX/Elsevier entry point.
+- `main-jlreq.tex` — previous manuscript source preserved verbatim during the format migration.
+- `main-jlreq.pdf` — PDF corresponding to the previous layout.
+- `references.bib` — bibliography database.
+- `figures/` — manuscript figures.
 
-## Overleaf で編集する手順
+The current `main.tex` deliberately reuses the manuscript body from `main-jlreq.tex` so that applying the SoftwareX style does not silently rewrite the paper. The SoftwareX front matter, keywords, code metadata table, and Elsevier numbered bibliography style are defined in `main.tex`.
 
-1. この `publication` ディレクトリを ZIP 形式で圧縮します。
-2. Overleaf にログインし、`New Project` → `Upload Project` を選択します。
-3. 作成した ZIP ファイルをアップロードします。
-4. Overleaf 上で `main.tex` を開いて執筆を進めてください。
+## Compile
 
-必要に応じて、クラスファイルや追加パッケージをこのディレクトリに追加し、再度 Overleaf にアップロードまたは Git 連携してください。
+The manuscript currently contains Japanese text, so use LuaLaTeX rather than pdfLaTeX.
+
+```sh
+lualatex main.tex
+bibtex main
+lualatex main.tex
+lualatex main.tex
+```
+
+On Overleaf, select **LuaLaTeX** as the compiler. The `elsarticle` class and `elsarticle-num` bibliography style are included in normal TeX Live / Overleaf installations.
+
+## Before SoftwareX submission
+
+The manuscript body is still Japanese. Before submission to SoftwareX, translate and edit the manuscript in English, replace the remaining `TODO` in the Code metadata table (support/corresponding-author email), and review the manuscript structure against the current SoftwareX Guide for Authors.
