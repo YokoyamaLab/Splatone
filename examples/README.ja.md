@@ -1,168 +1,157 @@
 # Splatone Examples Viewer
 
-[Japanese version](README.ja.md)
+このページでは実行済み可視化例を掲載している。
 
-This directory contains pre-generated Splatone visualization examples.
+- 問い合わせコマンド: APIKEYを差し替える事でご自身でクローリングから行えます。
+- 結果閲覧コマンド: すでにクローリングした結果を閲覧するコマンドです。APPIKEYは必要ありません。
+- 結果スクリーンショット: 可視化結果のスクリーンショットです。インタラクティブな操作はできません。
 
-- **Crawl command**: run this command after replacing the API key with your own key.
-- **Result-viewing command**: load an existing result JSON file without crawling again. No API key is required.
-- **Screenshot**: static image of the visualization result. Screenshots are not interactive.
+## Visualizer比較用コマンドと結果 - 東京タワーとスカイツリー
 
-## Visualizer Comparison: Tokyo Tower and Tokyo Skytree
+### Bulky Cluster
 
-The following examples compare Flickr photographs related to Tokyo Tower and Tokyo Skytree in central Tokyo. Each section uses the same bounding box and cell size so that the visualizers can be compared directly.
-
-### Bulky
-
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-bulky \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-bulky.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-bulky.png)
 
 ### Marker Cluster
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-marker-cluster \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-cluster.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-cluster.png)
 
+
+
 ### Voronoi
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-voronoi \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-voronoi.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-voronoi.png)
 
+
+
 ### Pie Charts
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-pie-charts \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-pie.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-pie.png)
 
+
 ### Majority Hex
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-majority-hex \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-hex.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-hex.png)
 
-### Majority Hex with Hexapartite Cells
+### Majority Hex (Hexapartite)
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-majority-hex --v-majority-hex-Hexapartite \
 --ui-cell-size 1 --ui-units kilometers \
 --ui-bbox 139.63829,35.568818,139.950027,35.739825 \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-hexapartite.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-hexapartite.png)
 
+
 ### Heatmap
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-heat \
 --v-heat-Radius=250 \
 --ui-cell-size 1 --ui-units kilometers \
@@ -170,24 +159,24 @@ npx -y -p splatone@latest crawler -p flickr \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-heat.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-heat.png)
 
+
+
 ### DBSCAN
 
-Crawl command:
-
+- 問い合わせコマンド
 ```shell
 npx -y -p splatone@latest crawler -p flickr \
--k "Tokyo Tower#FA0000=tokyotower,東京タワー|Tokyo Skytree#2B89EE=skytree,スカイツリー" \
+-k "東京タワー#FA0000=tokyotower,東京タワー|スカイツリー#2B89EE=skytree,スカイツリー" \
 --vis-dbscan \
 --v-dbscan-MinPts=30 --v-dbscan-Eps=1 \
 --ui-cell-size 1 --ui-units kilometers \
@@ -195,13 +184,12 @@ npx -y -p splatone@latest crawler -p flickr \
 --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 
-Result-viewing command:
-
+- 結果閲覧コマンド
 ```shell
 npx -y -p splatone@latest browse \
 --browse-load-url="https://raw.githubusercontent.com/YokoyamaLab/Splatone/refs/heads/main/examples/tower-dbscan.json"
 ```
 
-Screenshot:
+- 結果スクリーンショット
 
 ![](tower-dbscan.png)
