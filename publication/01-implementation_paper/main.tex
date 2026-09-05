@@ -22,13 +22,9 @@
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
-\usepackage{svg}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{array}
-\usepackage{catchfile}
-
-\svgpath{{figures/}}
 
 \lstdefinestyle{commandline}{
   basicstyle=\ttfamily\small,
@@ -62,18 +58,13 @@
 
 \begin{frontmatter}
 
-\title{Splatone crawler: ジオソーシャルデータの収集・可視化のための汎用ツール}
+\title{Splatone: A modular platform for multi-source, category-aware geospatial data collection and visualization}
 
 \author[tmu]{Shohei Yokoyama}
 \address[tmu]{Tokyo Metropolitan University, 6-6 Asahigaoka, Hino, Tokyo, Japan}
 
 \begin{abstract}
-位置情報付き画像コレクションは，観光行動や都市空間の理解に有用な情報源として注目されているが，その空間的・時間的な不均一性や膨大な量により，単純な地図表示では全体の傾向把握が困難である．
-本研究では，位置情報付き画像の色彩情報と位置情報を統合的に扱う可視化ツールSplatone Crawlerを提案する．
-Splatone Crawlerは，知覚的距離に基づいた自動カラーパレット生成と，地理空間上のVoronoi分割，クラスタリング，グリッド集計など複数の可視化手法を組み合わせることで，ジオタグ位置分布だけでなく，カテゴリごとの空間配置を直感的に把握できることを目指す．
-また，ツール本体はProviderとVisualizerを差し替え可能な拡張機構を備えており，新たなデータソースや可視化手法を容易に追加できる点も特徴である．
-提案手法の実装系はGitHubおよびNPMにて公開されており，誰でも利用可能である．
-本論文ではそのシステム構成、利用方法、および利用事例を示す．
+Geotagged photographs, social media posts, and point-of-interest records are valuable sources for studying urban space, tourism, and human activity, but their volume, spatial heterogeneity, and category overlap make them difficult to inspect with simple point maps. Splatone is an open-source Node.js platform for collecting, normalizing, and visualizing such geospatial data. Its architecture separates data acquisition and visualization into independent Provider and Visualizer plugins, allowing new data sources and analytical views to be added without modifying the core pipeline. Existing providers support Flickr, Google Places, and OpenStreetMap/Overpass, and convert heterogeneous responses into a common GeoJSON-based data model. The platform supports category-aware color assignment and visualizers such as point maps, marker clustering, heatmaps, hexagonal aggregation, pie charts, Voronoi diagrams, and DBSCAN-based cluster boundaries. Splatone enables researchers to compare thematic spatial distributions interactively and export reproducible visualization results for further analysis.
 \end{abstract}
 
 \begin{keyword}
@@ -108,15 +99,16 @@ C9 & Support email for questions & \textit{TODO: add the support/corresponding-a
 
 % ---------------------------------------------------------------------------
 % Reuse the manuscript body without rewriting it during this format change.
-% The first real \section in main-jlreq.tex starts the manuscript body. The
-% legacy bibliography is discarded and replaced below by elsarticle-num.
+% The extracted body is kept in a normal input file so listings/verbatim content
+% is read with the correct catcodes.
 % ---------------------------------------------------------------------------
-\CatchFileDef{\LegacyManuscript}{main-jlreq.tex}{}
-\long\def\UseLegacyManuscriptBody#1\section#2\bibliographystyle#3\SoftwareXEnd{\section#2}
-\expandafter\UseLegacyManuscriptBody\LegacyManuscript\SoftwareXEnd
+\input{main-body.tex}
 
 % SoftwareX/Elsevier uses a numbered reference style.
 \bibliographystyle{elsarticle-num}
 \bibliography{references}
 
 \end{document}
+
+
+

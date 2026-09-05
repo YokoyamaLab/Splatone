@@ -5,16 +5,22 @@ This directory contains the Splatone implementation paper prepared with the Else
 ## Files
 
 - `main.tex` — SoftwareX/Elsevier entry point.
+- `main-body.tex` — manuscript body included by `main.tex`.
 - `main-jlreq.tex` — previous manuscript source preserved verbatim during the format migration.
-- `main-jlreq.pdf` — PDF corresponding to the previous layout.
 - `references.bib` — bibliography database.
 - `figures/` — manuscript figures.
 
-The current `main.tex` deliberately reuses the manuscript body from `main-jlreq.tex` so that applying the SoftwareX style does not silently rewrite the paper. The SoftwareX front matter, keywords, code metadata table, and Elsevier numbered bibliography style are defined in `main.tex`.
+The current `main.tex` deliberately reuses the manuscript body split out from `main-jlreq.tex` so that applying the SoftwareX style does not silently rewrite the paper. Keeping the extracted body in `main-body.tex` lets LaTeX read `listings` and other verbatim-like content with the correct catcodes. The SoftwareX front matter, keywords, code metadata table, and Elsevier numbered bibliography style are defined in `main.tex`.
 
 ## Compile
 
 The manuscript currently contains Japanese text, so use LuaLaTeX rather than pdfLaTeX.
+
+```sh
+latexmk -pdf main.tex
+```
+
+Or run the equivalent commands manually:
 
 ```sh
 lualatex main.tex
