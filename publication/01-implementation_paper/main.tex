@@ -4,12 +4,12 @@
 % SoftwareX / Elsevier submission layout for the Splatone implementation paper.
 % The previous jlreq-based manuscript is preserved as main-jlreq.tex.
 % To avoid changing the manuscript text during the style migration, this file
-% extracts the body of main-jlreq.tex after its abstract and typesets it with
-% Elsevier's elsarticle class.
+% extracts the body of main-jlreq.tex and typesets it with Elsevier's
+% elsarticle class.
 
 \documentclass[preprint,12pt]{elsarticle}
 
-% Japanese is retained for the current manuscript body.  SoftwareX submission
+% Japanese is retained for the current manuscript body. SoftwareX submission
 % itself should ultimately be prepared in English.
 \usepackage{luatexja}
 \usepackage{luatexja-fontspec}
@@ -99,7 +99,7 @@ C4 & Legal code license & MIT License \\
 C5 & Code versioning system used & Git \\
 C6 & Software code languages, tools, and services used & JavaScript (ES modules), Node.js, Express, EJS, Turf.js and related npm packages \\
 C7 & Compilation requirements, operating environments \& dependencies & Node.js and npm; dependencies are specified in \texttt{package.json} and \texttt{package-lock.json} \\
-C8 & If available, link to developer documentation/manual & \url{https://github.com/YokoyamaLab/Splatone#readme} \\
+C8 & If available, link to developer documentation/manual & \url{https://github.com/YokoyamaLab/Splatone} \\
 C9 & Support email for questions & \textit{TODO: add the support/corresponding-author email before submission} \\
 \bottomrule
 \end{tabularx}
@@ -108,12 +108,12 @@ C9 & Support email for questions & \textit{TODO: add the support/corresponding-a
 
 % ---------------------------------------------------------------------------
 % Reuse the manuscript body without rewriting it during this format change.
-% Everything up to and including the old abstract is discarded, as is the
-% old plain bibliography.  The sections themselves are preserved verbatim.
+% The first real \section in main-jlreq.tex starts the manuscript body. The
+% legacy bibliography is discarded and replaced below by elsarticle-num.
 % ---------------------------------------------------------------------------
 \CatchFileDef{\LegacyManuscript}{main-jlreq.tex}{}
-\long\def\UseLegacyManuscriptBody#1\end{abstract}#2\bibliographystyle{plain}#3\end{document}{#2}
-\expandafter\UseLegacyManuscriptBody\LegacyManuscript
+\long\def\UseLegacyManuscriptBody#1\section#2\bibliographystyle#3\SoftwareXEnd{\section#2}
+\expandafter\UseLegacyManuscriptBody\LegacyManuscript\SoftwareXEnd
 
 % SoftwareX/Elsevier uses a numbered reference style.
 \bibliographystyle{elsarticle-num}
