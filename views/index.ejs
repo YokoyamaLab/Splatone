@@ -594,6 +594,140 @@
     const overlays = {};
     const resultExtras = {};
 
+    function tryExtendBoundsWithLayer(bounds, layer) {
+      if (!layer) return false;
+      if (typeof layer.getBounds === 'function') {
+        try {
+          const candidate = layer.getBounds();
+          if (candidate && typeof candidate.isValid === 'function' && candidate.isValid()) {
+            bounds.extend(candidate);
+            return true;
+          }
+        } catch (err) {
+          console.debug('[browse-fit] layer.getBounds failed', err);
+        }
+      }
+      if (typeof layer.getLatLng === 'function') {
+        try {
+          const latlng = layer.getLatLng();
+          if (latlng && Number.isFinite(latlng.lat) && Number.isFinite(latlng.lng)) {
+            bounds.extend(latlng);
+            return true;
+          }
+        } catch (err) {
+          console.debug('[browse-fit] layer.getLatLng failed', err);
+        }
+      }
+      if (typeof layer.getLayers === 'function') {
+        let childExtended = false;
+        try {
+          layer.getLayers().forEach((child) => {
+            if (tryExtendBoundsWithLayer(bounds, child)) {
+              childExtended = true;
+            }
+          });
+        } catch (err) {
+          console.debug('[browse-fit] layer.getLayers failed', err);
+        }
+        return childExtended;
+      }
+      if (Array.isArray(layer)) {
+        let childExtended = false;
+        layer.forEach((child) => {
+          if (tryExtendBoundsWithLayer(bounds, child)) {
+            childExtended = true;
+          }
+        });
+        return childExtended;
+      }
+      return false;
+    }
+
+    function extendBoundsFromGeoInput(bounds, geoInput) {
+      if (!geoInput) {
+        return false;
+      }
+      if (Array.isArray(geoInput)) {
+        let extended = false;
+        geoInput.forEach((entry) => {
+          if (extendBoundsFromGeoInput(bounds, entry)) {
+            extended = true;
+          }
+        });
+        return extended;
+      }
+      if (isPlainObject(geoInput) && !geoInput.type) {
+        let extended = false;
+        Object.values(geoInput).forEach((entry) => {
+          if (extendBoundsFromGeoInput(bounds, entry)) {
+            extended = true;
+          }
+        });
+        return extended;
+      }
+      if (geoInput.type) {
+        try {
+          const tmpLayer = L.geoJSON(geoInput);
+          const candidate = tmpLayer.getBounds();
+          if (candidate && typeof candidate.isValid === 'function' && candidate.isValid()) {
+            bounds.extend(candidate);
+            return true;
+          }
+        } catch (err) {
+          console.debug('[browse-fit] failed to derive bounds from geojson', err);
+        }
+      }
+      return false;
+    }
+
+    function autoFitMapToBundle(mapInstance, {
+      overlays: overlayMap,
+      bundleHexGrid,
+      bundleTriangles,
+      bundle
+    }) {
+      if (!browseMode || !mapInstance) {
+        return;
+      }
+      const bounds = L.latLngBounds();
+      let extended = false;
+
+      Object.values(overlayMap || {}).forEach((layer) => {
+        if (tryExtendBoundsWithLayer(bounds, layer)) {
+          extended = true;
+        }
+      });
+
+      if (!extended) {
+        const geoFallbacks = [
+          bundleHexGrid,
+          bundleTriangles,
+          bundle?.extra?.hex,
+          ...(Array.isArray(bundle?.extra?.triangles) ? bundle.extra.triangles : [])
+        ];
+        for (const geo of geoFallbacks) {
+          if (extendBoundsFromGeoInput(bounds, geo)) {
+            extended = true;
+            break;
+          }
+        }
+      }
+
+      if (!extended && bundle?.geoJson) {
+        for (const entry of Object.values(bundle.geoJson)) {
+          if (extendBoundsFromGeoInput(bounds, entry)) {
+            extended = true;
+            break;
+          }
+        }
+      }
+
+      if (extended && bounds.isValid()) {
+        const padding = window.matchMedia('(max-width: 768px)').matches ? [12, 12] : [24, 24];
+        mapInstance.fitBounds(bounds, { padding, maxZoom: 17 });
+      }
+    }
+
     async function visualizeBundle(bundle, { sourceLabel = 'server' } = {}) {
       await welcomeReady;
       if (!bundle || typeof bundle !== 'object') {
@@ -721,6 +855,15 @@
         position: 'topleft'
       });
       layerControl.addTo(map);
+
+      if (browseMode) {
+        autoFitMapToBundle(map, {
+          overlays,
+          bundleHexGrid,
+          bundleTriangles,
+          bundle
+        });
+      }
 
       const downloadBtn = document.getElementById('download-json');
       if (downloadBtn && downloadBtn.dataset.bound !== '1') {
