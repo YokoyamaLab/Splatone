@@ -143,7 +143,8 @@ export default class FlickrProvider extends ProviderBase {
             const apikey = await loadAPIKey(this.id);
             //console.log(apikey);
             options['APIKEY'] = apikey;
-        } else if (!RE_FLICKR_API_KEY.test(options['APIKEY'])) {
+        }
+        if (!RE_FLICKR_API_KEY.test(String(options['APIKEY'] || '').trim())) {
             throw new Error('Invalid Flickr API key format: 32桁 16進数で指定してください');
         }
         if (options['GimmeGimme']) {

@@ -62,12 +62,25 @@
     ],
     "latex-workshop.latex.recipes": [
         {
+            "name": "ptex2pdf(uplatex)_ja",
+            "tools": [
+                "ptex2pdf(uplatex)_ja"
+            ]
+        },
+        {
+            "name": "ptex2pdf(platex)_ja",
+            "tools": [
+                "ptex2pdf(platex)_ja"
+            ]
+        },
+        {
             "name": "Latexmk(lualatex)",
             "tools": [
                 "Latexmk(lualatex)",
             ]
         },
     ],
+    "latex-workshop.latex.recipe.default": "ptex2pdf(uplatex)_ja",
     "terminal.integrated.env.windows": {
         "PATH": "C:\\Program Files\\Inkscape\\bin;${env:PATH}"
     },

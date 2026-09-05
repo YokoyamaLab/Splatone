@@ -228,6 +228,52 @@ APIキーは以下の３種類の方法で与える事ができます
 
 Google Maps Places Text Search API を利用して、テキストクエリに合致する POI を Hex 単位で収集します。`-p gmap` を指定し、`--keywords` で `カテゴリ名=TextSearchクエリ` を与えると、カテゴリ名で彩色しながらクエリ文字列を Google に送信します（例: `-k "カフェ=cafe tokyo|観光=landmark tokyo"`）。検索半径は UI のセルサイズ (`--ui-cell-size` と `--ui-units`) をメートル換算した値を自動適用し、API の上限である 50km を超えないようクランプされます。さらに各 Hex の外接 bbox を `locationbias=rectangle` として付与し、Text Search リクエスト自体が対象 Hex の範囲に収束するよう制御しています（最終結果も Hex 内判定でフィルタ）。
 
+#### 事前準備（APIキー）
+
+Google Places API キー（Text Search が有効なキー）が必要です。以下のいずれかで渡します。
+
+- コマンド引数: `--p-gmap-APIKEY="AIza..."`
+- 環境変数: `API_KEY_gmap`（例: `set API_KEY_gmap=AIza...` / `export API_KEY_gmap=AIza...`）
+- ファイル: `.API_KEY.gmap`（中身はキー文字列のみ）
+
+※キーの形式チェックは `gmap` Provider 側で行います（`AIza...` で始まる形式）。
+
+#### keywords（-k/--keywords）の書き方（gmap）
+
+- 基本: `カテゴリ名=TextSearchクエリ`
+  - 例: `カフェ=cafe tokyo`
+- カテゴリを複数: `|` 区切り
+  - 例: `カフェ=cafe tokyo|観光=landmark tokyo`
+- 1カテゴリ内でクエリを複数（バリアント）: `,` 区切り
+  - 例: `カフェ=cafe tokyo,coffee shop tokyo`
+  - これは「同じカテゴリとして複数回 Text Search を投げて結果を合算」します（ORのつもりで使えます）。
+
+#### 最小コマンド例（gmap）
+
+```bash
+# APIキーを引数で渡す例（都市で初期位置も指定）
+npx -y -p splatone@latest crawler \
+  -p gmap \
+  -k "カフェ=cafe tokyo|観光=landmark tokyo" \
+  --vis-bulky \
+  --city "Tokyo" \
+  --p-gmap-APIKEY="AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+環境変数で渡す例（キーをコマンドに含めない）
+
+```bash
+# macOS/Linux (bash/zsh)
+export API_KEY_gmap="AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+npx -y -p splatone@latest crawler -p gmap -k "カフェ=cafe tokyo" --vis-bulky --city "Tokyo"
+```
+
+```powershell
+# Windows PowerShell
+$env:API_KEY_gmap = "AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+npx -y -p splatone@latest crawler -p gmap -k "カフェ=cafe tokyo" --vis-bulky --city "Tokyo"
+```
+
 | オプション | 説明 | 型 | デフォルト |
 | :-- | :-- | :-- | :-- |
 | `--p-gmap-APIKEY` | Google Places API キー。省略時は `.API_KEY.gmap` もしくは `API_KEY_gmap` 環境変数から読み込み。 | 文字列 |  |
@@ -243,6 +289,42 @@ Places API は 2 ページ目以降を取得する際に 2 秒程度の待ち時
 ### <a name='overpass-openstreetmapの地点を取得するクローラー'></a>overpass: OpenStreetMapの地点を取得するクローラー
 
 OpenStreetMap の Overpass API を用いて、タグ条件に一致するノード/ウェイ/リレーションを Hex 単位で収集します。`-p overpass` を指定し、`--keywords` で `カテゴリ名=タグ条件` を与えると、カテゴリ毎に Hex bbox 内へ個別の Overpass クエリを投げます。タグ条件は `amenity=restaurant` のような `key=value` 形式を基本とし、複数指定したい場合は `,` で区切って OR 検索します（例: `-k "麺類#D93C3C=amenity=ramen,amenity=noodle_shop"`）。`node:amenity=cafe` のように `node|way|relation:` プレフィックスを付けると特定の幾何種のみを対象にできます。
+
+#### keywords（-k/--keywords）の書き方（overpass）
+
+- 基本: `カテゴリ名=タグ条件`
+- カテゴリを複数: `|` 区切り
+- 1カテゴリ内で条件を複数（バリアント）: `,` 区切り
+  - 例: `麺類=amenity=ramen,amenity=noodle_shop`
+  - `,` で分けた条件はそれぞれ別クエリとして実行され、同一カテゴリに合算されます（OR用途）。
+
+タグ条件（spec）の例（いずれも1つの条件として書けます）
+
+- `amenity=cafe`（key=value）
+- `amenity!=cafe`（否定一致）
+- `name=~Star.*`（正規表現一致）
+- `name!~Star.*`（正規表現の否定）
+- `amenity`（key の存在チェック。`["amenity"]` のように扱われます）
+- `node:amenity=cafe` / `way:highway=bus_stop`（対象ジオメトリ種の限定）
+
+#### 最小コマンド例（overpass）
+
+```bash
+npx -y -p splatone@latest crawler \
+  -p overpass \
+  -k "カフェ#ff5f5f=amenity=cafe,amenity=coffee_shop|文化施設#3366ff=tourism=museum,tourism=gallery" \
+  --vis-bulky \
+  --city "Kyoto"
+```
+
+```powershell
+# Windows PowerShell 版
+npx -y -p splatone@latest crawler `
+  -p overpass `
+  -k "カフェ#ff5f5f=amenity=cafe,amenity=coffee_shop|文化施設#3366ff=tourism=museum,tourism=gallery" `
+  --vis-bulky `
+  --city "Kyoto"
+```
 
 | オプション | 説明 | 型 | デフォルト |
 | :-- | :-- | :-- | :-- |

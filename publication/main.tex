@@ -1,4 +1,4 @@
-% !TeX program = pdflatex
+% !TeX program = uplatex
 % !TeX encoding = UTF-8
 
 %==============================
@@ -17,15 +17,17 @@
 \usetikzlibrary{arrows.meta, positioning}
 \usepackage{authblk}
 \usepackage{url}
-\usepackage{hyperref}
+\usepackage[dvipdfmx]{hyperref}
 \usepackage{geometry}
 \geometry{margin=25mm}
 \usepackage{listings}
 \usepackage{xcolor} % 色を使う場合
-\usepackage{svg}
+\usepackage{array}
+\usepackage{tabularx}
 
-\svgpath{{figures/}}
-%\svgsetup{inkscapelatex=true, inkscapepath={C:/Program Files/Inkscape/bin/}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
 
 \lstdefinestyle{commandline}{
   basicstyle=\ttfamily\small,
@@ -174,10 +176,25 @@ HexGridはユーザが指定したセルサイズに基づいて、ユーザが�
 
 なおラベルは必須ではなく，キーワード群のみでカテゴリを定義する事も可能である．その場合は最初のキーワードがラベルとして用いられる．
 
+本ツールのCLIでは，カテゴリ集合を1つの文字列として与える（例: \texttt{-k} / \texttt{--keywords}）．基本的な表記は以下の通りである．
+\begin{itemize}
+  \item カテゴリ区切り: \texttt{|}
+  \item ラベル付け: \texttt{ラベル=検索指定}
+  \item 明示色指定（任意）: \texttt{ラベル\#RRGGBB=検索指定}（例: \texttt{カフェ\#ff5f5f=...}）
+\end{itemize}
+ここで「検索指定」の内部表現（例えば \texttt{,} をORとして解釈するか，複数クエリとして分割するか）はProviderの種類に依存する（後述）．
+
 \subsubsection{Provider}
 
 Splatone Crawlerはジオソーシャルデータに特化したクローラーであるが，集める対象のサービスは限定しておらず，Providerと呼ぶプラグイン機構により，収集対象サービスのAPIをラップする事で，複数のジオソーシャルデータサービスに対応できるようになっている．
 現在のバージョンではFlickr, Google Places Text Search（gmap）, OpenStreetMap Overpassの3種類のProviderを提供しており，アーキテクチャはオープンで第三者が新たなProviderを追加する事も可能である．
+
+Providerごとの検索指定（\texttt{--keywords}の右辺）の解釈は次の通りである．
+\begin{itemize}
+  \item Flickr（\texttt{flickr}）: タグキーワード（複数語）によりジオタグ付き写真を検索する．
+  \item Google Places Text Search（\texttt{gmap}）: Text Search のクエリ文字列（自然言語・空白を含む文字列）を送信しPOIを取得する．同一カテゴリ内で\texttt{,}区切りにすると複数クエリとして実行し合算する．
+  \item OpenStreetMap Overpass（\texttt{overpass}）: \texttt{amenity=cafe} 等のタグ条件（key/value/正規表現等）でノード・ウェイ・リレーションを取得する．\texttt{node:}等のプレフィックスで幾何種を限定できる．同一カテゴリ内で\texttt{,}区切りにすると複数条件として実行し合算する．
+\end{itemize}
 
 Providerの動作は非同期であり，ワーカープロセスを用いて並列にクローリングを行う事ができる．並列度はコマンドライン引数で指定可能であり，これにより大規模なジオソーシャルデータの収集を効率的に行う事ができる．
 多くのサービスでは，APIの利用制限が設けられており，一定時間内に実行できるリクエスト数が制限されている．Providerはこの制限に対応するため，リクエストの最低実行間隔を指定する事ができ，これにより，APIの利用制限を超えないように設計されている．
@@ -221,6 +238,20 @@ npx -y -p splatone@latest crawler -p flickr -k "canal,river|street,alley|bridge"
 --vis-bulky --p-flickr-APIKEY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 \end{commandline}
 
+Google Places Text Search（\texttt{gmap}）を利用する場合も同様に \texttt{-p gmap} を指定する．APIキーは \texttt{--p-gmap-APIKEY} で渡すほか，環境変数 \texttt{API\_KEY\_gmap} またはファイル \texttt{.API\_KEY.gmap} から読み込ませることもできる．
+
+\begin{commandline}
+npx -y -p splatone@latest crawler -p gmap -k "カフェ=cafe tokyo|観光=landmark tokyo" \
+--vis-bulky --city "Tokyo" --p-gmap-APIKEY="AIzaxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+\end{commandline}
+
+OpenStreetMap Overpass（\texttt{overpass}）ではタグ条件でPOIを収集する．以下はカフェ（amenity）と文化施設（tourism）を比較する例である．
+
+\begin{commandline}
+npx -y -p splatone@latest crawler -p overpass -k "カフェ\#ff5f5f=amenity=cafe,amenity=coffee_shop|文化施設\#3366ff=tourism=museum,tourism=gallery" \
+--vis-bulky --city "Kyoto"
+\end{commandline}
+
 コマンドを実行すると，Webブラウザが立ち上がり地図が表示される．
 地図はマウスでスクロールでき，拡大・縮小も可能である．
 ここで任意の場所を矩形ツールで指定しStart Crawlingボタンを押下する事で，クローリングが開始される．しばらくたつと当該領域の指定したキーワードを持つジオタグ付き写真の収集が完了し，地図上に表示される．
@@ -250,7 +281,7 @@ Visualizer側はProviderから得られたSUFSのFeatureCollectionに対して�
 
 \begin{figure}[h]
   \centering
-  \includesvg[width=1\textwidth,inkscapelatex=false]{overall}
+  \includegraphics[width=\textwidth]{svg-inkscape/overall_svg-raw.pdf}
   \caption{Splatone Crawler の全体構成}
   \label{fig:architecture}
 \end{figure}
@@ -326,23 +357,24 @@ Flickr Providerの主要なオプションを表\ref{tab:flickr_provider_params}
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Flickr Providerの主なコマンドライン引数}
 \label{tab:flickr_provider_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-\texttt{--p-flickr-APIKEY} & 文字列 & Flickr APIキー（自動読込可） &  \\
-\texttt{--p-flickr-Extras} & 文字列 & 取得するメタデータ（extras） & \texttt{date\_upload,date\_taken,owner\_name,geo,url\_sq,tags} \\
-\texttt{--p-flickr-DateMode} & 選択 & 時間軸（upload/taken） & upload \\
-\texttt{--p-flickr-DateMin} & 文字列/数値 & 期間下限（YYYY-MM-DD or UNIX秒） & 2004-01-01相当 \\
-\texttt{--p-flickr-DateMax} & 文字列/数値 & 期間上限（YYYY-MM-DD or UNIX秒） & 現在時刻付近 \\
-\texttt{--p-flickr-Haste} & 真偽 & 時間窓の分割並列探索 & true \\
-\texttt{--p-flickr-GimmeGimme} & 文字列 & 画像ダウンロード先（任意） &  \\
-\texttt{--p-flickr-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
-\texttt{--p-flickr-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
+\url{--p-flickr-APIKEY} & 文字列 & Flickr APIキー（自動読込可） &  \\
+\url{--p-flickr-Extras} & 文字列 & 取得するメタデータ（extras） & \url{date_upload,date_taken,owner_name,geo,url_sq,tags} \\
+\url{--p-flickr-DateMode} & 選択 & 時間軸（upload/taken） & upload \\
+\url{--p-flickr-DateMin} & 文字列/数値 & 期間下限（YYYY-MM-DD or UNIX秒） & 2004-01-01相当 \\
+\url{--p-flickr-DateMax} & 文字列/数値 & 期間上限（YYYY-MM-DD or UNIX秒） & 現在時刻付近 \\
+\url{--p-flickr-Haste} & 真偽 & 時間窓の分割並列探索 & true \\
+\url{--p-flickr-GimmeGimme} & 文字列 & 画像ダウンロード先（任意） &  \\
+\url{--p-flickr-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
+\url{--p-flickr-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{Google Places Text Search Provider (gmap)}
@@ -354,19 +386,20 @@ gmap Providerの主要なオプションを表\ref{tab:gmap_provider_params}に�
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{gmap Providerの主なコマンドライン引数}
 \label{tab:gmap_provider_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-\texttt{--p-gmap-APIKEY} & 文字列 & Google Places APIキー（自動読込可） &  \\
-\texttt{--p-gmap-Language} & 文字列 & Places APIレスポンスの言語コード & ja \\
-\texttt{--p-gmap-MaxPages} & 数値 & Text Searchで辿る最大ページ数（1〜3） & 3 \\
-\texttt{--p-gmap-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
-\texttt{--p-gmap-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
+\url{--p-gmap-APIKEY} & 文字列 & Google Places APIキー（自動読込可） &  \\
+\url{--p-gmap-Language} & 文字列 & Places APIレスポンスの言語コード & ja \\
+\url{--p-gmap-MaxPages} & 数値 & Text Searchで辿る最大ページ数（1〜3） & 3 \\
+\url{--p-gmap-ThrottleMaxConcurrent} & 数値 & API同時実行数 & 2 \\
+\url{--p-gmap-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 500 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{Overpass Provider}
@@ -378,20 +411,21 @@ Overpass Providerの主要なオプションを表\ref{tab:overpass_provider_par
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Overpass Providerの主なコマンドライン引数}
 \label{tab:overpass_provider_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-\texttt{--p-overpass-Endpoint} & 文字列 & Overpass interpreter endpoint URL & \url{https://overpass-api.de/api/interpreter} \\
-\texttt{--p-overpass-TimeoutSeconds} & 数値 & リクエストタイムアウト（秒） & 25 \\
-\texttt{--p-overpass-MaxRetries} & 数値 & HTTP/ネットワークエラー時の再試行回数 & 3 \\
-\texttt{--p-overpass-UserAgent} & 文字列 & Overpassへ送るUser-Agent文字列 & Splatone-Overpass (+\url{https://github.com/YokoyamaLab/Splatone}) \\
-\texttt{--p-overpass-ThrottleMaxConcurrent} & 数値 & API同時実行数（1以上） & 1 \\
-\texttt{--p-overpass-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 1500 \\
+\url{--p-overpass-Endpoint} & 文字列 & Overpass interpreter endpoint URL & \url{https://overpass-api.de/api/interpreter} \\
+\url{--p-overpass-TimeoutSeconds} & 数値 & リクエストタイムアウト（秒） & 25 \\
+\url{--p-overpass-MaxRetries} & 数値 & HTTP/ネットワークエラー時の再試行回数 & 3 \\
+\url{--p-overpass-UserAgent} & 文字列 & Overpassへ送るUser-Agent文字列 & Splatone-Overpass (+\url{https://github.com/YokoyamaLab/Splatone}) \\
+\url{--p-overpass-ThrottleMaxConcurrent} & 数値 & API同時実行数（1以上） & 1 \\
+\url{--p-overpass-ThrottleMinTimeMs} & 数値 & 最小待機時間（ms） & 1500 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 
@@ -466,21 +500,22 @@ Bulky Visualizationは描画を調整するために表\ref{tab:bulky_params}に
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Bulky Visualizationの主なコマンドライン引数}
 \label{tab:bulky_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-	\texttt{--vis-bulky} & 真偽 & Bulky Visualizationを有効にする & false \\
-	\texttt{--v-bulky-Radius} & 数値 & Point Markerの半径 & 5 \\
-	\texttt{--v-bulky-Stroke} & 真偽 & Point Markerの線の有無 & true \\
-	\texttt{--v-bulky-Weight} & 数値 & Point Markerの線の太さ & 1 \\
-	\texttt{--v-bulky-Opacity} & 数値 & Point Markerの線の透明度 & 1 \\
-	\texttt{--v-bulky-Filling} & 真偽 & Point Markerの塗りの有無 & true \\
-	\texttt{--v-bulky-FillOpacity} & 数値 & Point Markerの塗りの透明度 & 0.5 \\
+  \url{--vis-bulky} & 真偽 & Bulky Visualizationを有効にする & false \\
+  \url{--v-bulky-Radius} & 数値 & Point Markerの半径 & 5 \\
+  \url{--v-bulky-Stroke} & 真偽 & Point Markerの線の有無 & true \\
+  \url{--v-bulky-Weight} & 数値 & Point Markerの線の太さ & 1 \\
+  \url{--v-bulky-Opacity} & 数値 & Point Markerの線の透明度 & 1 \\
+  \url{--v-bulky-Filling} & 真偽 & Point Markerの塗りの有無 & true \\
+  \url{--v-bulky-FillOpacity} & 数値 & Point Markerの塗りの透明度 & 0.5 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table} 
 
 \subsubsection{Marker-cluster Visualization}
@@ -521,16 +556,17 @@ Marker-cluster VisualizationのBulky Visualizationに対する利点は、ジオ
 Marker-cluster Visualizationは描画を調整するために表\ref{tab:marker_cluster_params}に示すコマンドライン引数を受け取る．
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Marker-cluster Visualizationの主なコマンドライン引数}
 \label{tab:marker_cluster_params} 
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\ 
 \hline
-	\texttt{--vis-marker-cluster} & 真偽 & Marker-cluster Visualizationを有効にする & false \\
-	\texttt{--v-marker-cluster-MaxClusterRadius} & 数値 & クラスタを構成する範囲(半径) & 80 \\
+  \url{--vis-marker-cluster} & 真偽 & Marker-cluster Visualizationを有効にする & false \\
+  \url{--v-marker-cluster-}\allowbreak\url{MaxClusterRadius} & 数値 & クラスタを構成する範囲(半径) & 80 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table} 
 
 \subsubsection{Voronoi-based Visualization}
@@ -578,17 +614,18 @@ Voronoi Visualizationは描画を調整するために表\ref{tab:voronoi_params
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Voronoi Visualizationの主なコマンドライン引数}
 \label{tab:voronoi_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-	\texttt{--vis-voronoi} & 真偽 & Voronoi Visualizationを有効にする & false \\
-	\texttt{--v-voronoi-MaxSitesPerHex} & 数値 & 各Hex内で残す最大サイト数（0=無制限） & 0 \\
-	\texttt{--v-voronoi-MinSiteSpacingMeters} & 数値 & サイト間の最小距離[メートル] & 50 \\
+  \url{--vis-voronoi} & 真偽 & Voronoi Visualizationを有効にする & false \\
+  \url{--v-voronoi-MaxSitesPerHex} & 数値 & 各Hex内で残す最大サイト数（0=無制限） & 0 \\
+  \url{--v-voronoi-MinSiteSpacingMeters} & 数値 & サイト間の最小距離[メートル] & 50 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{Pie-charts Visualization}
@@ -615,19 +652,20 @@ Pie-charts Visualizationは描画を調整するために表\ref{tab:pie_charts_
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Pie-charts Visualizationの主なコマンドライン引数}
 \label{tab:pie_charts_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-  \texttt{--vis-pie-charts} & 真偽 & Pie-charts Visualizationを有効にする & false \\
-  \texttt{--v-pie-charts-MaxRadiusScale} & 数値 & Hex内接円半径に対する最大半径スケール（0–1.5） & 0.9 \\
-  \texttt{--v-pie-charts-MinRadiusScale} & 数値 & 最大半径に対する最小半径スケール（0–1） & 0.25 \\
-  \texttt{--v-pie-charts-StrokeWidth} & 数値 & Pie Chart輪郭線の太さ(px) & 1 \\
-  \texttt{--v-pie-charts-BackgroundOpacity} & 数値 & 最大半径ガイドリングの透明度（0–1） & 0.2 \\
+  \url{--vis-pie-charts} & 真偽 & Pie-charts Visualizationを有効にする & false \\
+  \url{--v-pie-charts-MaxRadiusScale} & 数値 & Hex内接円半径に対する最大半径スケール（0–1.5） & 0.9 \\
+  \url{--v-pie-charts-MinRadiusScale} & 数値 & 最大半径に対する最小半径スケール（0–1） & 0.25 \\
+  \url{--v-pie-charts-StrokeWidth} & 数値 & Pie Chart輪郭線の太さ(px) & 1 \\
+  \url{--v-pie-charts-BackgroundOpacity} & 数値 & 最大半径ガイドリングの透明度（0–1） & 0.2 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{Majority-hex Visualization}
@@ -673,20 +711,21 @@ Majority-hex Visualizationは描画を調整するために表\ref{tab:majority_
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Majority-hex Visualizationの主なコマンドライン引数}
 \label{tab:majority_hex_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-  \texttt{--vis-majority-hex} & 真偽 & Majority-hex Visualizationを有効にする & false \\
-  \texttt{--v-majority-hex-Hexapartite} & 真偽 & Hex内カテゴリ頻度に応じて六角形を分割色彩 & false \\
-  \texttt{--v-majority-hex-HexOpacity} & 数値 & 六角形の線の透明度 & 1 \\
-  \texttt{--v-majority-hex-HexWeight} & 数値 & 六角形の線の太さ & 1 \\
-  \texttt{--v-majority-hex-MaxOpacity} & 数値 & 正規化後の最大塗り透明度 & 0.9 \\
-  \texttt{--v-majority-hex-MinOpacity} & 数値 & 正規化後の最小塗り透明度 & 0.5 \\
+  \url{--vis-majority-hex} & 真偽 & Majority-hex Visualizationを有効にする & false \\
+  \url{--v-majority-hex-Hexapartite} & 真偽 & Hex内カテゴリ頻度に応じて六角形を分割色彩 & false \\
+  \url{--v-majority-hex-HexOpacity} & 数値 & 六角形の線の透明度 & 1 \\
+  \url{--v-majority-hex-HexWeight} & 数値 & 六角形の線の太さ & 1 \\
+  \url{--v-majority-hex-MaxOpacity} & 数値 & 正規化後の最大塗り透明度 & 0.9 \\
+  \url{--v-majority-hex-MinOpacity} & 数値 & 正規化後の最小塗り透明度 & 0.5 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{Heatmap Visualization}
@@ -722,21 +761,22 @@ Heatmap Visualizationは描画を調整するために表\ref{tab:heat_params}�
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{Heatmap Visualizationの主なコマンドライン引数}
 \label{tab:heat_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-  \texttt{--vis-heat} & 真偽 & Heatmap Visualizationを有効にする & false \\
-  \texttt{--v-heat-Radius} & 数値 & ヒートマップブラーの半径（Unitsで指定した距離単位） & 50 \\
-  \texttt{--v-heat-Units} & 文字列 & Radiusに使用する距離単位（kilometers/meters/miles） & meters \\
-  \texttt{--v-heat-MinOpacity} & 数値 & ヒートマップの最小透明度 & 0 \\
-  \texttt{--v-heat-MaxOpacity} & 数値 & ヒートマップの最大透明度 & 1 \\
-  \texttt{--v-heat-MaxValue} & 数値 & ヒートマップ強度の最大値（未指定時は自動推定） & （未指定） \\
-  \texttt{--v-heat-WeightThreshold} & 数値 & 近傍点数がこの値未満の点は描画しない & 1 \\
+  \url{--vis-heat} & 真偽 & Heatmap Visualizationを有効にする & false \\
+  \url{--v-heat-Radius} & 数値 & ヒートマップブラーの半径（Unitsで指定した距離単位） & 50 \\
+  \url{--v-heat-Units} & 文字列 & Radiusに使用する距離単位（kilometers/meters/miles） & meters \\
+  \url{--v-heat-MinOpacity} & 数値 & ヒートマップの最小透明度 & 0 \\
+  \url{--v-heat-MaxOpacity} & 数値 & ヒートマップの最大透明度 & 1 \\
+  \url{--v-heat-MaxValue} & 数値 & ヒートマップ強度の最大値（未指定時は自動推定） & （未指定） \\
+  \url{--v-heat-WeightThreshold} & 数値 & 近傍点数がこの値未満の点は描画しない & 1 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsubsection{DBSCAN-based Visualization}
@@ -769,25 +809,26 @@ DBSCAN Visualizationは描画を調整するために表\ref{tab:dbscan_params}�
 
 \begin{table}[h]
 \centering\small
+\setlength{\tabcolsep}{3pt}
 \caption{DBSCAN Visualizationの主なコマンドライン引数}
 \label{tab:dbscan_params}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{L{0.40\textwidth} L{0.09\textwidth} Y L{0.16\textwidth}}
 \hline
 引数 & 型 & 説明 & デフォルト \\
 \hline
-  \texttt{--vis-dbscan} & 真偽 & DBSCAN Visualizationを有効にする & false \\
-  \texttt{--v-dbscan-Eps} & 数値 & DBSCANのeps（クラスタ判定距離） & 0.6 \\
-  \texttt{--v-dbscan-MinPts} & 数値 & クラスタ確定に必要な点数 & 6 \\
-  \texttt{--v-dbscan-Units} & 文字列 & epsの距離単位（kilometers/meters/miles） & kilometers \\
-  \texttt{--v-dbscan-StrokeWidth} & 数値 & ポリゴン輪郭の太さ & 2 \\
-  \texttt{--v-dbscan-StrokeOpacity} & 数値 & ポリゴン輪郭の透明度 & 0.9 \\
-  \texttt{--v-dbscan-FillOpacity} & 数値 & ポリゴン塗りの透明度 & 0.35 \\
-  \texttt{--v-dbscan-DashArray} & 文字列 & LeafletのdashArray指定（例: "4 6"） & （空文字） \\
-  \texttt{--v-dbscan-KernelScale} & 数値 & KDEカーネル半径をepsの何倍にするか & 1 \\
-  \texttt{--v-dbscan-GridSize} & 数値 & KDE計算用グリッド解像度（長辺方向セル数） & 80 \\
-  \texttt{--v-dbscan-ContourPercent} & 数値 & 最大密度に対する等値線レベル（0-1） & 0.4 \\
+  \url{--vis-dbscan} & 真偽 & DBSCAN Visualizationを有効にする & false \\
+  \url{--v-dbscan-Eps} & 数値 & DBSCANのeps（クラスタ判定距離） & 0.6 \\
+  \url{--v-dbscan-MinPts} & 数値 & クラスタ確定に必要な点数 & 6 \\
+  \url{--v-dbscan-Units} & 文字列 & epsの距離単位（kilometers/meters/miles） & kilometers \\
+  \url{--v-dbscan-StrokeWidth} & 数値 & ポリゴン輪郭の太さ & 2 \\
+  \url{--v-dbscan-StrokeOpacity} & 数値 & ポリゴン輪郭の透明度 & 0.9 \\
+  \url{--v-dbscan-FillOpacity} & 数値 & ポリゴン塗りの透明度 & 0.35 \\
+  \url{--v-dbscan-DashArray} & 文字列 & LeafletのdashArray指定（例: "4 6"） & （空文字） \\
+  \url{--v-dbscan-KernelScale} & 数値 & KDEカーネル半径をepsの何倍にするか & 1 \\
+  \url{--v-dbscan-GridSize} & 数値 & KDE計算用グリッド解像度（長辺方向セル数） & 80 \\
+  \url{--v-dbscan-ContourPercent} & 数値 & 最大密度に対する等値線レベル（0-1） & 0.4 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 
