@@ -15,6 +15,8 @@
 
 Google Placesを対象とするGubertとSilvaの\textit{Google Places Enricher}は，対象地域を重複する検索範囲で覆い，Nearby Searchへの複数回の問い合わせ，ページング，重複除去を支援する．さらに，Yelpなどのカテゴリ体系を用いた施設情報の拡充とカテゴリ間の対応付けを提供する\cite{gubert2022placesenricher}．この研究は，GoogleのPOI取得でも，空間検索の構成や応答処理を利用者から切り離し，分析に利用できる形へ整えることの意義を示している．
 
+著者が開発した\textit{GooglePlaceNearBy}も，Google Places APIによる地域単位のPOI収集を支援するソフトウェアである\cite{yokoyama2020googleplacenearby}．同ツールは，Overpass APIから取得したOSM道路データに基づいて検索候補地点に優先度を付け，Google Nearby Searchを距離順で実行する．返却された施設までの距離から検索済みとみなす円形領域を更新し，その内部の候補地点をスキップするとともに，残余領域へ追加の問い合わせを行う．また，取得結果の重複除去，GeoJSON出力，地図表示を備える．このように，外部の地理情報と検索応答を利用して次の問い合わせを構成する，API固有の収集処理を実装している．
+
 取得戦略を検討する具体例として，Flickrの検索APIにはページングに関する制約が報告されている．Foxらは，一つの検索条件で取得できるユニークな写真が最大4,000件に制限され，それを超えるページで既取得の写真が重複して返される問題を指摘した\cite{fox2020photosearcher}．Yanらは検索領域を再帰的に細分化してこの制約に対処している\cite{yan2017postdisaster,yan2019flickrtags}．一方，\textit{photosearcher}は時刻順に取得した最大4,000件の写真の最新撮影日時を次の検索下限へ設定し，検索範囲を時間方向へ進める\cite{fox2020photosearcher}．したがって，空間分割や取得済みデータの時刻に基づく検索境界の更新自体は，既存研究にも見られる考え方である．
 
 さらに，Gulnermanらは同じ期間に対するFlickrの繰り返し検索で結果が変化することを報告し\cite{gulnerman2024antarctica}，Lepp{\"a}m{\"a}kiらは同一の時空間条件に対する応答の不一致と，検索領域の細分化による取得結果の安定性の改善を示している\cite{leppamaki2025flickr}．これらの知見は，検索結果件数やページ番号だけを前提とした単一の取得方式を，異なるサービスへ一律に適用することの限界を示唆する．本研究では，Flickrへの対処を基盤全体の前提とするのではなく，取得先に応じて収集戦略を実装できる構成を重視する．
@@ -28,6 +30,8 @@ Google Placesを対象とするGubertとSilvaの\textit{Google Places Enricher}�
 \subsection{Splatoneの位置づけ}
 
 Splatoneは，サービス別のデータ取得を担うProviderと，取得データの地図表現を担うVisualizerを独立したプラグインとして構成する．Flickr，Google Places Text Search，OSMのOverpass APIに対応するProviderは，それぞれの検索条件や応答に応じた取得処理を行い，共通のGeoJSONベースの表現へ変換する．後段では，対象領域，カテゴリ，Hexグリッドを共有しながら，点表示，クラスタ表示，ヒートマップ，カテゴリ別のセル集約などのVisualizerを利用する．これにより，新しい取得先への対応と，新しい可視化方法への対応を分離する．Google Places Enricherとは地域単位のPOI取得支援という目的を共有するが，Splatoneはカテゴリの意味的拡充ではなく，複数の取得先と交換可能な可視化を共通の枠組みで接続することに重点を置く\cite{gubert2022placesenricher}．
+
+著者の先行ソフトウェアGooglePlaceNearByとの違いも，複数APIの利用や地図表示の有無ではない．同ツールはOSM道路情報を補助的に利用したGoogle POI収集に重点を置くのに対し，Splatoneは取得先ごとの戦略と可視化を独立した拡張点として扱う．なお，現在のGoogle Places ProviderはHexセルを単位とするText Searchを用いており，GooglePlaceNearByの道路情報に基づくNearby Searchと同一の取得アルゴリズムではない．
 
 Flickr Providerは，この分離の意義を示す具体例である．Hexセルを包含するbounding boxを空間検索に用い，時刻降順の第1ページのみを取得して，取得結果の時刻に基づき次の検索上限を更新する．この\textit{pagination-independent}な方式は，後続ページを走査せずに広域の収集を進めるための，Flickr固有の実装上の工夫として位置づける．一方，Google Places ProviderはText Searchの継続トークンを扱う取得処理を実装し，Overpass Providerも独自の問い合わせ処理を持つ．これらにFlickrの時間カーソル方式を要求することはない．
 
@@ -44,3 +48,6 @@ Flickr Providerは，この分離の意義を示す具体例である．Hexセ�
 % - 2014年の約2億枚の収集経験は現行Splatoneの性能評価と同一視しない．
 %   Omori et al. (2014)を，論文中で報告されていない総収集数の根拠にしない．
 % - 未測定の取りこぼし率・スパム率・分析への影響を定量的な結論にしない．
+
+% GooglePlaceNearByは査読論文ではなく，確認したコミットのソフトウェア引用として記載．
+% ソースコードだけからSplatoneへの直接的なコード継承や効率向上の実測値は主張しない．
